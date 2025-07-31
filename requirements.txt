@@ -1,0 +1,8 @@
+# QR Project Requirements
+# Add your project dependencies here
+
+# Example dependencies (uncomment as needed):
+# requests>=2.25.1
+# qrcode>=7.3.1
+# pillow>=8.3.2
+# flask>=2.0.1
