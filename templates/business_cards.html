@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pengelola Kartu Nama</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .nav {
+            background: #f8f9fa;
+            padding: 15px 30px;
+            border-bottom: 1px solid #e1e5e9;
+        }
+
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            margin-right: 20px;
+            font-weight: 600;
+        }
+
+        .nav a:hover {
+            text-decoration: underline;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="text"], input[type="tel"], input[type="number"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .card-item {
+            background: #f8f9fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 12px;
+            padding: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+
+        .card-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        }
+
+        .delete-ribbon {
+            position: absolute;
+            top: -1px;
+            right: -1px;
+            background: #dc3545;
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 0 12px 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: background-color 0.2s;
+            z-index: 1;
+        }
+
+        .delete-ribbon:hover {
+            background: #c82333;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .card-company {
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .card-phone {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .card-stats {
+            display: flex;
+            justify-content: space-between;
+            margin: 15px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .qr-generation {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e1e5e9;
+        }
+
+        .quantity-input {
+            width: 100px !important;
+            margin-right: 10px;
+            padding: 8px 12px;
+            text-align: center;
+        }
+
+        .success, .error {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .cards-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💼 Pengelola Kartu Nama</h1>
+            <p>Buat kartu nama virtual dengan QR code sekali pakai</p>
+        </div>
+        
+        <div class="nav">
+            <a href="/"> Kartu Nama</a>
+        </div>
+        
+        <div class="content">
+            <!-- Create New Business Card -->
+            <div class="section">
+                <h2>➕ Buat Kartu Nama Baru</h2>
+                <form id="createCardForm">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="name">Nama Lengkap *</label>
+                            <input type="text" id="name" name="name" placeholder="Nama" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="company_name">Nama Perusahaan *</label>
+                            <input type="text" id="company_name" name="company_name" placeholder="Nama Perusahaan" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="phone">Nomor Telepon *</label>
+                            <input type="tel" id="phone" name="phone" placeholder="Nomor Telepon" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn" id="createCardBtn">
+                        ✨ Buat Kartu Nama
+                    </button>
+                </form>
+            </div>
+
+            <div id="messages"></div>
+
+            <!-- Existing Business Cards -->
+            <div class="section">
+                <h2>📋 Kartu Nama Anda</h2>
+                
+                <!-- Search Bar -->
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label for="searchInput">Cari berdasarkan Nama Perusahaan:</label>
+                    <input type="text" id="searchInput" placeholder="Ketik nama perusahaan untuk mencari..." 
+                           style="margin-bottom: 10px;" onkeyup="searchBusinessCards()">
+                </div>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Memuat kartu nama...</p>
+                </div>
+                <div class="cards-grid" id="cardsGrid">
+                    <!-- Cards will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load business cards on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadBusinessCards();
+        });
+
+        async function loadBusinessCards(searchQuery = '') {
+            const loading = document.getElementById('loading');
+            const cardsGrid = document.getElementById('cardsGrid');
+            
+            loading.style.display = 'block';
+            
+            try {
+                const url = searchQuery ? `/api/business-cards?search=${encodeURIComponent(searchQuery)}` : '/api/business-cards';
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayBusinessCards(data.cards);
+                } else {
+                    showMessage('error', `Error loading cards: ${data.error}`);
+                }
+            } catch (error) {
+                showMessage('error', `Network error: ${error.message}`);
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function searchBusinessCards() {
+            const searchQuery = document.getElementById('searchInput').value.trim();
+            loadBusinessCards(searchQuery);
+        }
+
+        function displayBusinessCards(cards) {
+            const cardsGrid = document.getElementById('cardsGrid');
+            
+            if (cards.length === 0) {
+                cardsGrid.innerHTML = '<p style="text-align: center; color: #666; grid-column: 1/-1;">Belum ada kartu nama. Buat yang pertama di atas!</p>';
+                return;
+            }
+            
+            cardsGrid.innerHTML = cards.map(card => `
+                <div class="card-item">
+                    <div class="delete-ribbon" onclick="deleteBusinessCard('${card.id}', '${escapeHtml(card.name)}')" 
+                         title="Hapus kartu nama">
+                        ×
+                    </div>
+                    
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">${escapeHtml(card.name)}</div>
+                            <div class="card-company">${escapeHtml(card.company_name)}</div>
+                            <div class="card-phone">📞 ${escapeHtml(card.phone)}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card-stats">
+                        <div class="stat">
+                            <div class="stat-number">${card.qr_count}</div>
+                            <div>QR Code</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-number">${card.scan_count}</div>
+                            <div>Total Pindai</div>
+                        </div>
+                    </div>
+                    
+                    <div class="qr-generation">
+                        <input type="text" id="quantity-${card.id}" min="1" max="100" value="5" 
+                               class="quantity-input" placeholder="Jml" 
+                               oninput="validateQuantityInput(this)" onblur="handleEmptyQuantity(this)">
+                        <button class="btn btn-small btn-success" onclick="generateCardQR('${card.id}', '${escapeHtml(card.name)}')">
+                            🎯 Buat QR Code
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Create new business card
+        document.getElementById('createCardForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('name').trim(),
+                company_name: formData.get('company_name').trim(),
+                phone: formData.get('phone').trim()
+            };
+            
+            const createBtn = document.getElementById('createCardBtn');
+            createBtn.disabled = true;
+            createBtn.textContent = '⏳ Membuat...';
+            
+            try {
+                const response = await fetch('/api/business-cards', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('success', `✅ Kartu nama berhasil dibuat untuk ${result.card.name}!`);
+                    document.getElementById('createCardForm').reset();
+                    loadBusinessCards(); // Refresh the list
+                } else {
+                    showMessage('error', `❌ Error: ${result.error}`);
+                }
+            } catch (error) {
+                showMessage('error', `❌ Kesalahan jaringan: ${error.message}`);
+            } finally {
+                createBtn.disabled = false;
+                createBtn.textContent = '✨ Buat Kartu Nama';
+            }
+        });
+
+        // Generate QR codes for business card
+        async function generateCardQR(cardId, cardName) {
+            const quantityInput = document.getElementById(`quantity-${cardId}`);
+            const quantity = parseInt(quantityInput.value) || 1;
+            
+            if (quantity < 1 || quantity > 100) {
+                showMessage('error', 'Jumlah harus antara 1 dan 100');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/business-cards/${cardId}/generate-qr`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ quantity })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage('success', `✅ Berhasil membuat ${data.quantity} QR code untuk ${cardName}!`);
+                    
+                    // Download QR codes
+                    if (data.quantity === 1) {
+                        downloadSingleQR(data.codes[0], cardName);
+                    } else {
+                        downloadBatchQR(data.codes, cardName);
+                    }
+                    loadBusinessCards(); // Refresh the list
+                } else {
+                    showMessage('error', `❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                showMessage('error', `❌ Kesalahan jaringan: ${error.message}`);
+            }
+        }
+
+        // Download single QR code
+        async function downloadSingleQR(code, cardName) {
+            try {
+                const url = `/api/download-qr/${code.id}`;
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${cardName}_qr_code.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch (error) {
+                showMessage('error', `❌ Kesalahan unduh: ${error.message}`);
+            }
+        }
+
+        // Download batch QR codes as ZIP
+        async function downloadBatchQR(codes, cardName) {
+            try {
+                const response = await fetch('/api/download-batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ codes, card_name: cardName })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${cardName}_qr_codes.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                }
+            } catch (error) {
+                showMessage('error', `❌ Kesalahan unduh: ${error.message}`);
+            }
+        }
+
+        // Delete business card
+        async function deleteBusinessCard(cardId, cardName) {
+            if (!confirm(`Apakah Anda yakin ingin menghapus kartu nama untuk "${cardName}"?\n\nIni juga akan menghapus semua QR code terkait (yang sudah digunakan dan belum digunakan).`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/business-cards/${cardId}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage('success', `✅ ${data.message}`);
+                    loadBusinessCards(); // Refresh the list
+                } else {
+                    showMessage('error', `❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                showMessage('error', `❌ Kesalahan jaringan: ${error.message}`);
+            }
+        }
+
+        function showMessage(type, message) {
+            const messages = document.getElementById('messages');
+            messages.innerHTML = `<div class="${type}">${message}</div>`;
+            setTimeout(() => {
+                messages.innerHTML = '';
+            }, 5000);
+        }
+
+        function validateQuantityInput(input) {
+            // Remove any non-numeric characters except for temporary empty state
+            let value = input.value.replace(/[^0-9]/g, '');
+            
+            // Update the input with cleaned value
+            input.value = value;
+            
+            // If value is numeric and greater than 100, cap it at 100
+            if (value && parseInt(value) > 100) {
+                input.value = '100';
+            }
+        }
+
+        function handleEmptyQuantity(input) {
+            // If input is empty or invalid, set to 1
+            if (!input.value || parseInt(input.value) < 1) {
+                input.value = '1';
+            }
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+    </script>
+</body>
+</html>
