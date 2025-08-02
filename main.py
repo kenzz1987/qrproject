@@ -54,6 +54,12 @@ def init_db():
         # Add the business_card_id column if it doesn't exist
         cursor.execute('ALTER TABLE qr_codes ADD COLUMN business_card_id TEXT NULL')
     
+    # Create indexes for better performance
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_codes_business_card_id ON qr_codes(business_card_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_codes_expired ON qr_codes(is_expired)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_codes_lookup ON qr_codes(id, business_card_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_business_cards_company ON business_cards(company_name COLLATE NOCASE)')
+    
     conn.commit()
     conn.close()
 
@@ -370,64 +376,82 @@ def business_card_landing(card_id):
         conn = sqlite3.connect('qr_codes.db')
         cursor = conn.cursor()
         
-        # Get business card info
-        cursor.execute(
-            'SELECT name, company_name, phone, scan_count FROM business_cards WHERE id = ?',
-            (card_id,)
-        )
-        card = cursor.fetchone()
-        
-        if not card:
-            return render_template('scan_result.html', 
-                                 status='error', 
-                                 message='Kartu nama tidak ditemukan')
-        
-        # If QR ID provided, validate and track the scan
         if qr_id:
-            # Check if QR code exists and belongs to this card
-            cursor.execute(
-                'SELECT id, is_expired FROM qr_codes WHERE id = ? AND business_card_id = ?',
-                (qr_id, card_id)
-            )
-            qr_result = cursor.fetchone()
+            # Single optimized query to get both business card and QR code info
+            cursor.execute('''
+                SELECT bc.name, bc.company_name, bc.phone, bc.scan_count,
+                       qr.id, qr.is_expired
+                FROM business_cards bc
+                LEFT JOIN qr_codes qr ON bc.id = qr.business_card_id
+                WHERE bc.id = ? AND qr.id = ?
+            ''', (card_id, qr_id))
             
-            if not qr_result:
-                return render_template('scan_result.html', 
-                                     status='error', 
-                                     message='QR code tidak valid')
+            result = cursor.fetchone()
             
-            if qr_result[1]:  # is_expired (already used)
+            if not result:
+                # Fallback: check if business card exists but QR doesn't belong to it
+                cursor.execute('SELECT name FROM business_cards WHERE id = ?', (card_id,))
+                if cursor.fetchone():
+                    conn.close()
+                    return render_template('scan_result.html', 
+                                         status='error', 
+                                         message='QR code tidak valid')
+                else:
+                    conn.close()
+                    return render_template('scan_result.html', 
+                                         status='error', 
+                                         message='Kartu nama tidak ditemukan')
+            
+            # Extract data
+            name, company_name, phone, scan_count = result[:4]
+            qr_exists, is_expired = result[4], result[5]
+            
+            if is_expired:  # Already used - fast path, no database updates needed
+                conn.close()
                 return render_template('scan_result.html', 
                                      status='expired', 
                                      message='QR code ini sudah pernah digunakan')
             
-            # Mark QR as used and increment business card scan count
-            cursor.execute(
-                'UPDATE qr_codes SET is_expired = TRUE, scanned_at = CURRENT_TIMESTAMP WHERE id = ?',
-                (qr_id,)
-            )
-            cursor.execute(
-                'UPDATE business_cards SET scan_count = scan_count + 1 WHERE id = ?',
-                (card_id,)
-            )
+            # First-time scan: Mark QR as used and increment scan count in single transaction
+            cursor.execute('''
+                UPDATE qr_codes 
+                SET is_expired = TRUE, scanned_at = CURRENT_TIMESTAMP 
+                WHERE id = ?
+            ''', (qr_id,))
+            
+            cursor.execute('''
+                UPDATE business_cards 
+                SET scan_count = scan_count + 1 
+                WHERE id = ?
+            ''', (card_id,))
+            
             conn.commit()
             
-            # Get updated scan count
+            # Use the incremented scan count
+            updated_count = scan_count + 1
+            
+        else:
+            # Direct access without QR code - single query
             cursor.execute(
-                'SELECT scan_count FROM business_cards WHERE id = ?',
+                'SELECT name, company_name, phone, scan_count FROM business_cards WHERE id = ?',
                 (card_id,)
             )
-            updated_count = cursor.fetchone()[0]
-        else:
-            # Direct access without QR code (for testing)
-            updated_count = card[3]
+            result = cursor.fetchone()
+            
+            if not result:
+                conn.close()
+                return render_template('scan_result.html', 
+                                     status='error', 
+                                     message='Kartu nama tidak ditemukan')
+            
+            name, company_name, phone, updated_count = result
         
         conn.close()
         
         card_data = {
-            'name': card[0],
-            'company_name': card[1],
-            'phone': card[2],
+            'name': name,
+            'company_name': company_name,
+            'phone': phone,
             'scan_count': updated_count
         }
         
