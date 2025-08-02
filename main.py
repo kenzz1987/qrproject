@@ -4,7 +4,8 @@ QR Code Generation Web Application
 A Flask web app for batch QR code generation and download
 """
 
-from flask import Flask, render_template, request, jsonify, send_file, redirect
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash, session
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import qrcode
 from PIL import Image
 import io
@@ -15,6 +16,8 @@ import sqlite3
 from datetime import datetime
 import tempfile
 import shutil
+import hashlib
+import secrets
 
 # Database setup
 def init_db():
@@ -63,7 +66,34 @@ def init_db():
     conn.commit()
     conn.close()
 
+# User class for authentication
+class User(UserMixin):
+    def __init__(self, user_id):
+        self.id = user_id
+
+# Configuration
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD_HASH = "feda659b4f3c925a95d992466d2b0c39a5533890287d9540efdd2999a011cbde5ed1f7cdd36357456fc8cb59d7ecd45eb88007be03449841ce4c9ab75315f1cc"  # SHA-512 hash of admin password
+
+def verify_password(password):
+    """Verify password against stored hash"""
+    return hashlib.sha512(password.encode()).hexdigest() == ADMIN_PASSWORD_HASH
+
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Silakan login untuk mengakses halaman admin.'
+login_manager.login_message_category = 'info'
+
+@login_manager.user_loader
+def load_user(user_id):
+    if user_id == "admin":
+        return User(user_id)
+    return None
 
 # Initialize database when the module is imported
 init_db()
@@ -84,11 +114,19 @@ def generate_qr_code(data, size=(300, 300)):
     return img
 
 @app.route('/')
+@login_required
 def index():
-    """Main page - Business cards management"""
+    """Main page - Business cards management (protected)"""
     return render_template('business_cards.html')
 
+@app.route('/admin')
+@login_required
+def admin():
+    """Admin page redirect"""
+    return redirect(url_for('index'))
+
 @app.route('/business-cards')
+@login_required
 def business_cards():
     """Business cards management page (redirect to main)"""
     return redirect('/')
@@ -114,7 +152,40 @@ def health_check():
             'timestamp': datetime.now().isoformat()
         }), 500
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Admin login page"""
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        if username == ADMIN_USERNAME and verify_password(password):
+            user = User("admin")
+            login_user(user)
+            next_page = request.args.get('next')
+            if not next_page or not next_page.startswith('/'):
+                next_page = url_for('index')
+            return redirect(next_page)
+        else:
+            flash('Username atau password salah', 'error')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Admin logout"""
+    logout_user()
+    flash('Anda telah logout', 'info')
+    return redirect(url_for('business_card_public'))
+
+@app.route('/public')
+def business_card_public():
+    """Public page - shows message that this is for QR code access only"""
+    return render_template('public.html')
+
 @app.route('/api/business-cards', methods=['GET'])
+@login_required
 def get_business_cards():
     """Get all business cards with optional search"""
     try:
@@ -164,6 +235,7 @@ def get_business_cards():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/business-cards', methods=['POST'])
+@login_required
 def create_business_card():
     """Create a new business card"""
     try:
@@ -202,6 +274,7 @@ def create_business_card():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/business-cards/<card_id>', methods=['DELETE'])
+@login_required
 def delete_business_card(card_id):
     """Delete a business card and all its QR codes"""
     try:
@@ -234,6 +307,7 @@ def delete_business_card(card_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/business-cards/<card_id>/generate-qr', methods=['POST'])
+@login_required
 def generate_business_card_qr(card_id):
     """Generate batch of one-time QR codes for a business card"""
     try:
@@ -284,6 +358,7 @@ def generate_business_card_qr(card_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download-qr/<code_id>')
+@login_required
 def download_single_qr(code_id):
     """Download single QR code as PNG file"""
     try:
@@ -325,6 +400,7 @@ def download_single_qr(code_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download-batch', methods=['POST'])
+@login_required
 def download_batch_qr():
     """Download batch of QR codes as ZIP file"""
     try:
@@ -463,6 +539,7 @@ def business_card_landing(card_id):
                              message=f'Error memuat kartu nama: {str(e)}')
 
 @app.route('/api/stats')
+@login_required
 def get_stats():
     """Get business card statistics"""
     try:

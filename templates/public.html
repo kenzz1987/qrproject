@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem QR Kartu Nama</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .info-container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+        
+        .info-header {
+            margin-bottom: 30px;
+        }
+        
+        .qr-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            display: block;
+        }
+        
+        .info-header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 15px;
+        }
+        
+        .info-content {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+        
+        .info-content p {
+            margin-bottom: 15px;
+        }
+        
+        .feature-list {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        
+        .feature-list h3 {
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .feature-list ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .feature-list li {
+            padding: 8px 0;
+            color: #555;
+            position: relative;
+            padding-left: 25px;
+        }
+        
+        .feature-list li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #10b981;
+            font-weight: bold;
+        }
+        
+        .admin-note {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            color: #92400e;
+            font-size: 14px;
+        }
+        
+        .admin-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: transform 0.2s ease;
+        }
+        
+        .admin-link:hover {
+            transform: translateY(-2px);
+        }
+        
+        @media (max-width: 480px) {
+            .info-container {
+                padding: 30px 20px;
+                margin: 20px;
+            }
+            
+            .qr-icon {
+                font-size: 60px;
+            }
+            
+            .info-header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="info-container">
+        <div class="info-header">
+            <span class="qr-icon">📱</span>
+            <h1>Sistem QR Kartu Nama</h1>
+        </div>
+        
+        <div class="info-content">
+            <p><strong>Selamat datang!</strong> Ini adalah sistem manajemen kartu nama digital dengan QR code.</p>
+            
+            <div class="feature-list">
+                <h3>🎯 Cara Penggunaan</h3>
+                <ul>
+                    <li>Scan QR code pada kartu nama untuk melihat informasi kontak</li>
+                    <li>Setiap QR code hanya dapat digunakan satu kali</li>
+                    <li>Informasi kontak akan ditampilkan dengan profesional</li>
+                    <li>Sistem mencatat statistik penggunaan untuk setiap kartu</li>
+                </ul>
+            </div>
+            
+            <p>Jika Anda memiliki QR code kartu nama, silakan scan untuk melihat informasi kontak lengkap.</p>
+        </div>
+        
+        <div class="admin-note">
+            <strong>📋 Untuk Admin:</strong> Jika Anda adalah admin dan ingin mengelola kartu nama, silakan login melalui panel admin.
+        </div>
+        
+        <a href="{{ url_for('login') }}" class="admin-link">
+            🔐 Login Admin
+        </a>
+    </div>
+</body>
+</html>
