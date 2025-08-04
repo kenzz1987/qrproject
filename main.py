@@ -41,13 +41,50 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS business_cards (
             id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
+            name TEXT,
             company_name TEXT NOT NULL,
-            phone TEXT NOT NULL,
+            phone TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             scan_count INTEGER DEFAULT 0
         )
     ''')
+    
+    # Check if we need to migrate existing table structure
+    cursor.execute("PRAGMA table_info(business_cards)")
+    columns_info = cursor.fetchall()
+    
+    # Check if name and phone columns are still NOT NULL
+    name_is_not_null = any(col[1] == 'name' and col[3] == 1 for col in columns_info)
+    phone_is_not_null = any(col[1] == 'phone' and col[3] == 1 for col in columns_info)
+    
+    if name_is_not_null or phone_is_not_null:
+        # Need to recreate table to allow NULL values for name and phone
+        cursor.execute('BEGIN TRANSACTION')
+        
+        # Create new table with correct schema
+        cursor.execute('''
+            CREATE TABLE business_cards_new (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                company_name TEXT NOT NULL,
+                phone TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                scan_count INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Copy data from old table to new table
+        cursor.execute('''
+            INSERT INTO business_cards_new (id, name, company_name, phone, created_at, scan_count)
+            SELECT id, name, company_name, phone, created_at, scan_count
+            FROM business_cards
+        ''')
+        
+        # Drop old table and rename new table
+        cursor.execute('DROP TABLE business_cards')
+        cursor.execute('ALTER TABLE business_cards_new RENAME TO business_cards')
+        
+        cursor.execute('COMMIT')
     
     # Check if business_card_id column exists in qr_codes table
     cursor.execute("PRAGMA table_info(qr_codes)")
@@ -244,8 +281,14 @@ def create_business_card():
         company_name = data.get('company_name', '').strip()
         phone = data.get('phone', '').strip()
         
-        if not name or not company_name or not phone:
-            return jsonify({'error': 'Nama, nama perusahaan, dan telepon wajib diisi'}), 400
+        if not company_name:
+            return jsonify({'error': 'Nama perusahaan wajib diisi'}), 400
+        
+        # Set default values for optional fields
+        if not name:
+            name = ''
+        if not phone:
+            phone = ''
         
         card_id = str(uuid.uuid4())
         
