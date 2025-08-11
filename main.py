@@ -7,7 +7,7 @@ A Flask web app for batch QR code generation and download
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash, session
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 import qrcode
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import io
 import zipfile
 import uuid
@@ -18,11 +18,26 @@ import tempfile
 import shutil
 import hashlib
 import secrets
+import random
+import string
 
 # Database setup
+def get_db_path():
+    """Get database path - use persistent volume on Railway"""
+    # Check if we're running on Railway (persistent volume)
+    railway_data_path = os.environ.get('DATABASE_PATH', '/app/data/qr_codes.db')
+    if os.path.exists('/app/data'):
+        # Ensure the data directory exists
+        os.makedirs('/app/data', exist_ok=True)
+        return railway_data_path
+    else:
+        # Local development
+        return 'qr_codes.db'
+
 def init_db():
     """Initialize SQLite database"""
-    conn = sqlite3.connect('qr_codes.db')
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # QR codes table
@@ -136,7 +151,7 @@ def load_user(user_id):
 init_db()
 
 def generate_qr_code(data, size=(300, 300)):
-    """Generate QR code as PIL Image"""
+    """Generate QR code as PIL Image with ptm.id/ text at bottom and vertical code on right"""
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -146,9 +161,128 @@ def generate_qr_code(data, size=(300, 300)):
     qr.add_data(data)
     qr.make(fit=True)
     
-    img = qr.make_image(fill_color="black", back_color="white")
-    img = img.resize(size, Image.Resampling.LANCZOS)
-    return img
+    # Generate the QR code image
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    qr_img = qr_img.resize(size, Image.Resampling.LANCZOS)
+    
+    # Generate unique 5-character code starting with "tg"
+    def generate_unique_code():
+        # Start with "tg"
+        code = "tg"
+        # Add 3 random characters (mix of upper and lower case)
+        chars = string.ascii_letters  # a-z, A-Z
+        for _ in range(3):
+            code += random.choice(chars)
+        return code
+    
+    unique_code = generate_unique_code()
+    
+    # Create a new image with extra space at the bottom for text and right for vertical code
+    text_height = 50  # More height for much larger text
+    code_width = 40   # More width for much larger vertical text
+    new_width = size[0] + code_width
+    new_height = size[1] + text_height
+    final_img = Image.new('RGB', (new_width, new_height), 'white')
+    
+    # Paste the QR code at the top-left
+    final_img.paste(qr_img, (0, 0))
+    
+    # Add text at the bottom
+    draw = ImageDraw.Draw(final_img)
+    
+    try:
+        # Try to use a built-in font with bold weight and larger sizes
+        font = ImageFont.truetype("arialbd.ttf", 16)  # Bold Arial, larger size for bottom text
+        small_font = ImageFont.truetype("arialbd.ttf", 14)  # Bold Arial for vertical text
+    except:
+        try:
+            # Fallback to regular Arial with larger sizes
+            font = ImageFont.truetype("arial.ttf", 16)
+            small_font = ImageFont.truetype("arial.ttf", 14)
+        except:
+            # Final fallback to default font
+            font = ImageFont.load_default()
+            small_font = ImageFont.load_default()
+    
+    # Bottom text: "ptm.id/"
+    bottom_text = "ptm.id/"
+    
+    # Calculate optimal font size for bottom text to fit QR code width
+    max_bottom_width = size[0] - 5   # Minimal padding for very tight fit
+    current_font_size = 44  # Start with doubled font size (22 * 2)
+    
+    # Find the largest font size that fits
+    while current_font_size > 16:
+        try:
+            test_font = ImageFont.truetype("arialbd.ttf", current_font_size)
+        except:
+            try:
+                test_font = ImageFont.truetype("arial.ttf", current_font_size)
+            except:
+                test_font = ImageFont.load_default()
+        
+        bbox = draw.textbbox((0, 0), bottom_text, font=test_font)
+        text_width = bbox[2] - bbox[0]
+        
+        if text_width <= max_bottom_width:
+            font = test_font
+            break
+        current_font_size -= 1
+    
+    # Get final text dimensions and center it horizontally under the QR code
+    bbox = draw.textbbox((0, 0), bottom_text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_x = (size[0] - text_width) // 2  # Center under QR code only
+    text_y = size[1]  # No gap - directly touching the QR code bottom edge
+    
+    # Draw the bottom text
+    draw.text((text_x, text_y), bottom_text, fill="black", font=font)
+    
+    # Create vertical text for the 5-digit code on the right side
+    # Calculate optimal font size for vertical text to fit QR code height
+    max_vertical_height = size[1] - 5   # Minimal padding for very tight fit
+    vertical_font_size = 36  # Start with doubled font size (18 * 2)
+    
+    # Find the largest font size that fits vertically
+    while vertical_font_size > 12:
+        try:
+            test_vertical_font = ImageFont.truetype("arialbd.ttf", vertical_font_size)
+        except:
+            try:
+                test_vertical_font = ImageFont.truetype("arial.ttf", vertical_font_size)
+            except:
+                test_vertical_font = ImageFont.load_default()
+        
+        # Create temporary image to measure rotated text height
+        temp_test_img = Image.new('RGB', (150, 60), 'white')
+        temp_test_draw = ImageDraw.Draw(temp_test_img)
+        temp_test_draw.text((10, 10), unique_code, fill="black", font=test_vertical_font)
+        rotated_test = temp_test_img.rotate(90, expand=True)
+        
+        if rotated_test.height <= max_vertical_height:
+            small_font = test_vertical_font
+            break
+        vertical_font_size -= 1
+    
+    # Create a temporary image for the vertical text with proper sizing
+    temp_img_width = max(100, vertical_font_size + 20)
+    temp_img_height = max(60, vertical_font_size + 20)
+    temp_img = Image.new('RGB', (temp_img_width, temp_img_height), 'white')
+    temp_draw = ImageDraw.Draw(temp_img)
+    temp_draw.text((15, 5), unique_code, fill="black", font=small_font)  # Move text to top of temp image
+    
+    # Rotate the text 90 degrees anticlockwise (counterclockwise)
+    rotated_text = temp_img.rotate(90, expand=True)
+    
+    # Calculate position for the vertical text on the right side of QR code
+    # Position it centered vertically relative to the QR code
+    vertical_x = size[0]  # Directly touching the QR code right edge
+    vertical_y = (size[1] - rotated_text.height) // 2  # Center vertically relative to QR code
+    
+    # Paste the rotated text onto the final image
+    final_img.paste(rotated_text, (vertical_x, vertical_y))
+    
+    return final_img
 
 @app.route('/')
 @login_required
@@ -172,13 +306,15 @@ def business_cards():
 def health_check():
     """Health check endpoint for monitoring"""
     try:
-        conn = sqlite3.connect('qr_codes.db')
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute('SELECT 1')
         conn.close()
         return jsonify({
             'status': 'healthy',
             'database': 'connected',
+            'db_path': db_path,
             'timestamp': datetime.now().isoformat()
         }), 200
     except Exception as e:
@@ -228,7 +364,8 @@ def get_business_cards():
     try:
         search_query = request.args.get('search', '').strip()
         
-        conn = sqlite3.connect('qr_codes.db')
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         if search_query:
@@ -292,7 +429,8 @@ def create_business_card():
         
         card_id = str(uuid.uuid4())
         
-        conn = sqlite3.connect('qr_codes.db')
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         cursor.execute(
@@ -321,7 +459,8 @@ def create_business_card():
 def delete_business_card(card_id):
     """Delete a business card and all its QR codes"""
     try:
-        conn = sqlite3.connect('qr_codes.db')
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         # Check if business card exists
@@ -361,7 +500,8 @@ def generate_business_card_qr(card_id):
         if quantity < 1 or quantity > 100:
             return jsonify({'error': 'Jumlah harus antara 1 dan 100'}), 400
         
-        conn = sqlite3.connect('qr_codes.db')
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         # Check if business card exists
@@ -405,7 +545,8 @@ def generate_business_card_qr(card_id):
 def download_single_qr(code_id):
     """Download single QR code as PNG file"""
     try:
-        conn = sqlite3.connect('qr_codes.db')
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         # Get QR code info
@@ -492,7 +633,8 @@ def business_card_landing(card_id):
     try:
         qr_id = request.args.get('qr')
         
-        conn = sqlite3.connect('qr_codes.db')
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         if qr_id:
@@ -586,7 +728,8 @@ def business_card_landing(card_id):
 def get_stats():
     """Get business card statistics"""
     try:
-        conn = sqlite3.connect('qr_codes.db')
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
         # Total business cards
