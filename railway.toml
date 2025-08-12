@@ -10,8 +10,7 @@ restartPolicyMaxRetries = 10
 
 # Persistent volume for database
 [[deploy.volumes]]
-source = "/data"
-target = "/app/data"
+mountPath = "/app/data"
 
 [deploy.env]
 PORT = "8080"

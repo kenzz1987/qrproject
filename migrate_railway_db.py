@@ -12,18 +12,39 @@ from datetime import datetime
 def migrate_database():
     """Migrate database to persistent volume if needed"""
     old_db_path = 'qr_codes.db'
-    new_db_path = '/app/data/qr_codes.db'
-    data_dir = '/app/data'
+    new_db_path = os.environ.get('DATABASE_PATH', '/app/data/qr_codes.db')
+    data_dir = os.path.dirname(new_db_path)
     
     print(f"Starting database migration at {datetime.now()}")
+    print(f"Target database path: {new_db_path}")
+    print(f"Data directory: {data_dir}")
     
     # Ensure data directory exists
     if not os.path.exists(data_dir):
         os.makedirs(data_dir, exist_ok=True)
         print(f"Created data directory: {data_dir}")
+    else:
+        print(f"Data directory already exists: {data_dir}")
     
-    # Check if old database exists and new one doesn't
-    if os.path.exists(old_db_path) and not os.path.exists(new_db_path):
+    # Check if database already exists at target location
+    if os.path.exists(new_db_path):
+        print(f"Database already exists at {new_db_path}")
+        # Test the existing database
+        try:
+            conn = sqlite3.connect(new_db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM business_cards")
+            card_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM qr_codes")
+            qr_count = cursor.fetchone()[0]
+            conn.close()
+            print(f"Existing database has {card_count} business cards and {qr_count} QR codes")
+        except Exception as e:
+            print(f"Error checking existing database: {e}")
+        return
+    
+    # Check if old database exists and migrate it
+    if os.path.exists(old_db_path):
         print(f"Migrating database from {old_db_path} to {new_db_path}")
         
         # Test connection to old database

@@ -24,15 +24,22 @@ import string
 # Database setup
 def get_db_path():
     """Get database path - use persistent volume on Railway"""
-    # Check if we're running on Railway (persistent volume)
+    # Check for Railway environment variables
     railway_data_path = os.environ.get('DATABASE_PATH', '/app/data/qr_codes.db')
-    if os.path.exists('/app/data'):
+    
+    # Check if we're running on Railway or similar container environment
+    if os.environ.get('RAILWAY_ENVIRONMENT') or os.path.exists('/app'):
         # Ensure the data directory exists
-        os.makedirs('/app/data', exist_ok=True)
+        data_dir = os.path.dirname(railway_data_path)
+        os.makedirs(data_dir, exist_ok=True)
+        print(f"Using Railway database path: {railway_data_path}")
+        print(f"Data directory exists: {os.path.exists(data_dir)}")
         return railway_data_path
     else:
         # Local development
-        return 'qr_codes.db'
+        local_path = 'qr_codes.db'
+        print(f"Using local database path: {local_path}")
+        return local_path
 
 def init_db():
     """Initialize SQLite database"""
@@ -172,18 +179,43 @@ def generate_qr_code(data, size=(300, 300)):
     
     unique_code = generate_unique_code()
     
-    # Load fonts with fixed sizes
-    try:
-        # Try to use bold Arial with fixed sizes
-        bottom_font = ImageFont.truetype("arialbd.ttf", BOTTOM_TEXT_SIZE)
-        vertical_font = ImageFont.truetype("arialbd.ttf", VERTICAL_TEXT_SIZE)
-    except:
+    # Load fonts with fixed sizes - improved Railway compatibility
+    font_paths = [
+        # Windows fonts
+        "arialbd.ttf",
+        "arial.ttf",
+        # Linux/Railway fonts
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        # Ubuntu fonts
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-Regular.ttf"
+    ]
+    
+    bottom_font = None
+    vertical_font = None
+    
+    # Try each font path
+    for font_path in font_paths:
         try:
-            # Fallback to regular Arial
-            bottom_font = ImageFont.truetype("arial.ttf", BOTTOM_TEXT_SIZE)
-            vertical_font = ImageFont.truetype("arial.ttf", VERTICAL_TEXT_SIZE)
+            bottom_font = ImageFont.truetype(font_path, BOTTOM_TEXT_SIZE)
+            vertical_font = ImageFont.truetype(font_path, VERTICAL_TEXT_SIZE)
+            print(f"Using font: {font_path}")
+            break
+        except (OSError, IOError):
+            continue
+    
+    # Final fallback to default font with size if no TrueType fonts found
+    if bottom_font is None:
+        print("Warning: No TrueType fonts found, using default font")
+        try:
+            # Try to load default with size
+            bottom_font = ImageFont.load_default()
+            vertical_font = ImageFont.load_default()
         except:
-            # Final fallback to default font
+            # Last resort
             bottom_font = ImageFont.load_default()
             vertical_font = ImageFont.load_default()
     
