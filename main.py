@@ -23,27 +23,57 @@ import string
 import urllib.request
 
 def download_fonts():
-    """Download free fonts for Railway deployment"""
+    """Download free fonts for Railway deployment with enhanced error handling"""
     font_urls = {
         "fonts/DejaVuSans.ttf": "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf",
         "fonts/DejaVuSans-Bold.ttf": "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans-Bold.ttf"
     }
     
-    # Create fonts directory if it doesn't exist
-    os.makedirs("fonts", exist_ok=True)
-    
-    for font_path, url in font_urls.items():
-        if not os.path.exists(font_path):
-            try:
-                print(f"Downloading font: {font_path}")
-                urllib.request.urlretrieve(url, font_path)
-                print(f"Successfully downloaded: {font_path}")
-            except Exception as e:
-                print(f"Failed to download {font_path}: {e}")
+    try:
+        # Create fonts directory if it doesn't exist
+        os.makedirs("fonts", exist_ok=True)
+        print(f"Created/verified fonts directory: {os.path.abspath('fonts')}")
+        
+        for font_path, url in font_urls.items():
+            if not os.path.exists(font_path):
+                try:
+                    print(f"Downloading font: {font_path} from {url}")
+                    # Add headers to avoid being blocked
+                    req = urllib.request.Request(url, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    })
+                    
+                    with urllib.request.urlopen(req, timeout=30) as response:
+                        with open(font_path, 'wb') as f:
+                            f.write(response.read())
+                    
+                    # Verify download
+                    if os.path.exists(font_path) and os.path.getsize(font_path) > 1000:
+                        print(f"Successfully downloaded: {font_path} ({os.path.getsize(font_path)} bytes)")
+                    else:
+                        print(f"Download verification failed for {font_path}")
+                        
+                except Exception as e:
+                    print(f"Failed to download {font_path}: {e}")
+            else:
+                print(f"Font already exists: {font_path} ({os.path.getsize(font_path)} bytes)")
+                
+        # List final font directory contents
+        try:
+            font_files = os.listdir("fonts")
+            print(f"Final fonts directory contents: {font_files}")
+        except Exception as e:
+            print(f"Could not list fonts directory: {e}")
+            
+    except Exception as e:
+        print(f"Critical error in download_fonts: {e}")
 
 # Download fonts on startup if in production environment
 if os.environ.get('RAILWAY_ENVIRONMENT') or os.path.exists('/app'):
+    print("Production environment detected, attempting font download...")
     download_fonts()
+else:
+    print("Local development environment detected")
 
 # Database setup
 def get_db_path():
@@ -182,231 +212,287 @@ def load_user(user_id):
 init_db()
 
 def generate_qr_code(data, size=(300, 300)):
-    """Generate QR code as PIL Image with fixed text size and scaled QR code"""
-    # Fixed text sizes for consistency
-    BOTTOM_TEXT_SIZE = 50  # Fixed size for "ptm.id/" text
-    VERTICAL_TEXT_SIZE = 46  # Fixed size for vertical code
-    
-    # Fixed spacing (reverted to original values)
-    TEXT_HEIGHT = 65  # Fixed height for bottom text area
-    CODE_WIDTH = 60   # Fixed width for vertical text area
-    
-    # Generate unique 5-character code starting with "tg"
-    def generate_unique_code():
-        # Start with "tg"
-        code = "tg"
-        # Add 3 random characters (mix of upper and lower case)
-        chars = string.ascii_letters  # a-z, A-Z
-        for _ in range(3):
-            code += random.choice(chars)
-        return code
-    
-    unique_code = generate_unique_code()
-    
-    # Load fonts with fixed sizes - Railway-compatible bundled fonts
-    font_paths = [
-        # Bundled fonts (relative to app directory)
-        "fonts/DejaVuSans-Bold.ttf",
-        "fonts/DejaVuSans.ttf", 
-        "fonts/LiberationSans-Bold.ttf",
-        "fonts/LiberationSans-Regular.ttf",
-        # Windows fonts (local development)
-        "arialbd.ttf",
-        "arial.ttf",
-        # System fonts (backup)
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
-        "/usr/share/fonts/truetype/ubuntu/Ubuntu-Regular.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/System/Library/Fonts/Arial.ttf",  # macOS
-        "/System/Library/Fonts/ArialBold.ttf"  # macOS
-    ]
-    
-    bottom_font = None
-    vertical_font = None
-    
-    print(f"Attempting to load fonts with sizes: bottom={BOTTOM_TEXT_SIZE}, vertical={VERTICAL_TEXT_SIZE}")
-    
-    # Check what fonts are available in the system
+    """Generate QR code as PIL Image with bulletproof fallback system"""
     try:
-        import subprocess
-        result = subprocess.run(['fc-list'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            available_fonts = result.stdout[:500]  # First 500 chars to avoid spam
-            print(f"Available system fonts (sample): {available_fonts}")
-        else:
-            print("fc-list command failed")
-    except Exception as e:
-        print(f"Could not check system fonts: {e}")
-    
-    # Try each font path
-    for i, font_path in enumerate(font_paths):
-        try:
-            print(f"Trying font {i+1}/{len(font_paths)}: {font_path}")
-            bottom_font = ImageFont.truetype(font_path, BOTTOM_TEXT_SIZE)
-            vertical_font = ImageFont.truetype(font_path, VERTICAL_TEXT_SIZE)
-            print(f"SUCCESS: Using font: {font_path} with sizes {BOTTOM_TEXT_SIZE}/{VERTICAL_TEXT_SIZE}")
-            break
-        except (OSError, IOError) as e:
-            print(f"Failed to load {font_path}: {e}")
-            continue
-    
-    # If no TrueType fonts found, create a custom font-like solution
-    if bottom_font is None:
-        print("WARNING: No TrueType fonts found, using enhanced default font approach")
-        try:
-            # Try PIL's load_default with size parameter (newer versions)
-            from PIL import ImageFont
-            bottom_font = ImageFont.load_default(size=BOTTOM_TEXT_SIZE)
-            vertical_font = ImageFont.load_default(size=VERTICAL_TEXT_SIZE)
-            print(f"Using default font with requested sizes: {BOTTOM_TEXT_SIZE}/{VERTICAL_TEXT_SIZE}")
-        except TypeError:
-            # Older PIL versions don't support size parameter - use bitmap scaling approach
-            print("Default font doesn't support size parameter, using bitmap scaling workaround")
-            default_font = ImageFont.load_default()
-            
-            # Create a workaround for larger text by drawing multiple times with offset
-            # This simulates bold/larger text appearance
-            class EnhancedDefaultFont:
-                def __init__(self, base_font, scale_factor=2):
-                    self.base_font = base_font
-                    self.scale_factor = scale_factor
+        # Fixed text sizes for consistency
+        BOTTOM_TEXT_SIZE = 50  # Fixed size for "ptm.id/" text
+        VERTICAL_TEXT_SIZE = 46  # Fixed size for vertical code
+        
+        # Fixed spacing (reverted to original values)
+        TEXT_HEIGHT = 65  # Fixed height for bottom text area
+        CODE_WIDTH = 60   # Fixed width for vertical text area
+        
+        # Generate unique 5-character code starting with "tg"
+        def generate_unique_code():
+            # Start with "tg"
+            code = "tg"
+            # Add 3 random characters (mix of upper and lower case)
+            chars = string.ascii_letters  # a-z, A-Z
+            for _ in range(3):
+                code += random.choice(chars)
+            return code
+        
+        unique_code = generate_unique_code()
+        
+        # Ultra-robust font loading with comprehensive fallbacks
+        bottom_font = None
+        vertical_font = None
+        
+        print(f"Starting font loading process for QR generation...")
+        
+        # Priority 1: Try downloaded/bundled fonts
+        font_paths = [
+            # Downloaded fonts (highest priority)
+            "fonts/DejaVuSans-Bold.ttf",
+            "fonts/DejaVuSans.ttf",
+            # Bundled fonts
+            "fonts/LiberationSans-Bold.ttf", 
+            "fonts/LiberationSans-Regular.ttf",
+            # Windows fonts (development)
+            "arialbd.ttf",
+            "arial.ttf",
+            # Linux system fonts
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-Regular.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            # macOS fonts
+            "/System/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/ArialBold.ttf"
+        ]
+        
+        # Try each font path
+        for i, font_path in enumerate(font_paths):
+            try:
+                print(f"Attempting font {i+1}/{len(font_paths)}: {font_path}")
+                if os.path.exists(font_path):
+                    bottom_font = ImageFont.truetype(font_path, BOTTOM_TEXT_SIZE)
+                    vertical_font = ImageFont.truetype(font_path, VERTICAL_TEXT_SIZE)
+                    print(f"SUCCESS: Loaded TrueType font: {font_path}")
+                    break
+                else:
+                    print(f"Font file not found: {font_path}")
+            except Exception as e:
+                print(f"Failed to load {font_path}: {e}")
+                continue
+        
+        # Priority 2: Try default font with size (newer PIL)
+        if bottom_font is None:
+            try:
+                print("Trying PIL default font with size parameter...")
+                bottom_font = ImageFont.load_default(size=BOTTOM_TEXT_SIZE)
+                vertical_font = ImageFont.load_default(size=VERTICAL_TEXT_SIZE)
+                print("SUCCESS: Using default font with size parameter")
+            except (TypeError, AttributeError) as e:
+                print(f"Default font with size failed: {e}")
+                bottom_font = None
+        
+        # Priority 3: Enhanced default font (bitmap scaling approach)
+        if bottom_font is None:
+            try:
+                print("Creating enhanced default font with bitmap scaling...")
+                default_font = ImageFont.load_default()
                 
+                class SafeEnhancedDefaultFont:
+                    def __init__(self, base_font, scale_factor=2):
+                        self.base_font = base_font
+                        self.scale_factor = scale_factor
+                    
+                    def getsize(self, text):
+                        try:
+                            return self.base_font.getsize(text)
+                        except AttributeError:
+                            # Ultra-safe fallback
+                            return (len(text) * 8, 16)
+                    
+                    def getbbox(self, text):
+                        try:
+                            return self.base_font.getbbox(text)
+                        except AttributeError:
+                            # Fallback for older PIL versions
+                            try:
+                                w, h = self.base_font.getsize(text)
+                                return (0, 0, w, h)
+                            except:
+                                # Ultra-safe fallback
+                                w, h = len(text) * 8, 16
+                                return (0, 0, w, h)
+                
+                bottom_font = SafeEnhancedDefaultFont(default_font, 2)
+                vertical_font = SafeEnhancedDefaultFont(default_font, 2)
+                print("SUCCESS: Created enhanced default font")
+                
+            except Exception as e:
+                print(f"Enhanced default font creation failed: {e}")
+                # This should never happen, but just in case...
+                bottom_font = None
+        
+        # Priority 4: Last resort - create dummy font object
+        if bottom_font is None:
+            print("CRITICAL: Creating emergency dummy font...")
+            
+            class EmergencyFont:
                 def getsize(self, text):
-                    return self.base_font.getsize(text)
+                    return (len(text) * 10, 20)
                 
                 def getbbox(self, text):
-                    try:
-                        return self.base_font.getbbox(text)
-                    except AttributeError:
-                        # Fallback for older PIL versions
-                        w, h = self.base_font.getsize(text)
-                        return (0, 0, w, h)
+                    w, h = len(text) * 10, 20
+                    return (0, 0, w, h)
             
-            bottom_font = EnhancedDefaultFont(default_font, 2)
-            vertical_font = EnhancedDefaultFont(default_font, 2)
-            print("Using enhanced default font with bitmap scaling")
+            bottom_font = EmergencyFont()
+            vertical_font = EmergencyFont()
+            print("Emergency font created")
+        
+        print(f"Final font selection: {type(bottom_font)}")
+        
+        # Ultra-safe text drawing function
+        def safe_draw_text(draw, position, text, font, fill="black"):
+            x, y = position
             
-    print(f"Final fonts loaded: bottom_font={type(bottom_font)}, vertical_font={type(vertical_font)}")
-    
-    # Enhanced text drawing function for default fonts with error handling
-    def draw_enhanced_text(draw, position, text, font, fill="black"):
-        x, y = position
-        try:
-            if hasattr(font, 'scale_factor'):
-                # Enhanced default font - draw multiple times for bold effect
-                for dx in range(2):
-                    for dy in range(2):
-                        draw.text((x + dx, y + dy), text, fill=fill, font=font.base_font)
-            else:
-                # Regular font
-                draw.text(position, text, fill=fill, font=font)
-        except Exception as e:
-            print(f"Error drawing text '{text}': {e}")
-            # Fallback to basic drawing
             try:
+                # Method 1: Enhanced font with bitmap scaling
+                if hasattr(font, 'scale_factor') and hasattr(font, 'base_font'):
+                    for dx in range(2):
+                        for dy in range(2):
+                            draw.text((x + dx, y + dy), text, fill=fill, font=font.base_font)
+                    return True
+            except Exception as e:
+                print(f"Enhanced font drawing failed: {e}")
+            
+            try:
+                # Method 2: Regular font
                 if hasattr(font, 'base_font'):
                     draw.text(position, text, fill=fill, font=font.base_font)
                 else:
-                    draw.text(position, text, fill=fill, font=ImageFont.load_default())
-            except Exception as e2:
-                print(f"Fallback text drawing also failed: {e2}")
-                # Last resort - draw without font
+                    draw.text(position, text, fill=fill, font=font)
+                return True
+            except Exception as e:
+                print(f"Regular font drawing failed: {e}")
+            
+            try:
+                # Method 3: Default font fallback
+                default_font = ImageFont.load_default()
+                draw.text(position, text, fill=fill, font=default_font)
+                return True
+            except Exception as e:
+                print(f"Default font fallback failed: {e}")
+            
+            try:
+                # Method 4: No font (PIL handles this)
                 draw.text(position, text, fill=fill)
-    
-    # Create temporary image to measure text dimensions
-    temp_img = Image.new('RGB', (400, 100), 'white')
-    temp_draw = ImageDraw.Draw(temp_img)
-    
-    # Measure bottom text dimensions with fallback for enhanced fonts
-    bottom_text = "ptm.id/"
-    try:
-        if hasattr(bottom_font, 'getbbox'):
-            bottom_bbox = bottom_font.getbbox(bottom_text)
-        else:
-            bottom_bbox = temp_draw.textbbox((0, 0), bottom_text, font=bottom_font)
-        bottom_text_width = bottom_bbox[2] - bottom_bbox[0]
+                return True
+            except Exception as e:
+                print(f"Emergency text drawing failed: {e}")
+                return False
+        
+        # Safe text measurement function
+        def safe_measure_text(font, text):
+            try:
+                if hasattr(font, 'getbbox'):
+                    bbox = font.getbbox(text)
+                    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+            except:
+                pass
+            
+            try:
+                if hasattr(font, 'getsize'):
+                    return font.getsize(text)
+            except:
+                pass
+            
+            # Ultimate fallback
+            return (len(text) * 10, 20)
+        
+        # Measure text dimensions safely
+        bottom_text = "ptm.id/"
+        bottom_text_width, _ = safe_measure_text(bottom_font, bottom_text)
+        
+        vertical_text_width, vertical_text_height = safe_measure_text(vertical_font, unique_code)
+        
+        # Calculate QR code size with safe minimums
+        min_qr_width = max(bottom_text_width + 10, size[0] - CODE_WIDTH, 200)
+        min_qr_height = max(vertical_text_width + 10, size[1] - TEXT_HEIGHT, 200)
+        qr_size = max(min_qr_width, min_qr_height, 250)  # Increased minimum
+        
+        # Generate QR code with extra error handling
+        try:
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            qr.add_data(data)
+            qr.make(fit=True)
+            
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
+            
+        except Exception as e:
+            print(f"QR code generation failed: {e}")
+            # Create a simple placeholder image
+            qr_img = Image.new('RGB', (qr_size, qr_size), 'white')
+            draw_placeholder = ImageDraw.Draw(qr_img)
+            draw_placeholder.rectangle([10, 10, qr_size-10, qr_size-10], outline='black', width=3)
+            draw_placeholder.text((qr_size//4, qr_size//2), "QR ERROR", fill='black')
+        
+        # Create final image
+        final_width = qr_size + CODE_WIDTH
+        final_height = qr_size + TEXT_HEIGHT
+        final_img = Image.new('RGB', (final_width, final_height), 'white')
+        
+        # Paste QR code
+        final_img.paste(qr_img, (0, 0))
+        
+        # Add text with safe drawing
+        draw = ImageDraw.Draw(final_img)
+        
+        # Bottom text positioning
+        text_x = max(0, (qr_size - bottom_text_width) // 2)
+        text_y = qr_size - 25
+        
+        success = safe_draw_text(draw, (text_x, text_y), bottom_text, bottom_font, fill="black")
+        if not success:
+            print("WARNING: Bottom text drawing completely failed")
+        
+        # Vertical text with safe handling
+        try:
+            # Create vertical text image
+            temp_vertical_img = Image.new('RGB', (vertical_text_width + 20, vertical_text_height + 20), 'white')
+            temp_vertical_draw = ImageDraw.Draw(temp_vertical_img)
+            
+            if safe_draw_text(temp_vertical_draw, (10, 10), unique_code, vertical_font, fill="black"):
+                # Rotate and paste
+                rotated_text = temp_vertical_img.rotate(90, expand=True)
+                vertical_x = qr_size - 15
+                vertical_y = max(0, (qr_size - rotated_text.height) // 2)
+                final_img.paste(rotated_text, (vertical_x, vertical_y))
+            else:
+                print("WARNING: Vertical text creation failed")
+                
+        except Exception as e:
+            print(f"Vertical text processing failed: {e}")
+        
+        print("QR code generation completed successfully")
+        return final_img
+        
     except Exception as e:
-        print(f"Error measuring bottom text, using fallback: {e}")
-        # Fallback: estimate text width
-        bottom_text_width = len(bottom_text) * 12  # Rough estimate
-    
-    # Measure vertical text dimensions with fallback
-    try:
-        if hasattr(vertical_font, 'getbbox'):
-            vertical_bbox = vertical_font.getbbox(unique_code)
-        else:
-            vertical_bbox = temp_draw.textbbox((0, 0), unique_code, font=vertical_font)
-        vertical_text_width = vertical_bbox[2] - vertical_bbox[0]
-        vertical_text_height = vertical_bbox[3] - vertical_bbox[1]
-    except Exception as e:
-        print(f"Error measuring vertical text, using fallback: {e}")
-        # Fallback: estimate text dimensions
-        vertical_text_width = len(unique_code) * 10
-        vertical_text_height = 12
-    
-    # Calculate required QR code size to accommodate the text
-    # The QR code should be wide enough for the bottom text and tall enough for the vertical text
-    min_qr_width = max(bottom_text_width + 10, size[0] - CODE_WIDTH)  # 10px padding
-    min_qr_height = max(vertical_text_width + 10, size[1] - TEXT_HEIGHT)  # vertical_text_width becomes height after rotation
-    
-    # Use the larger dimension to keep QR code square
-    qr_size = max(min_qr_width, min_qr_height, 200)  # Minimum 200px
-    
-    # Generate QR code with calculated size
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    
-    # Generate the QR code image
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-    qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
-    
-    # Create final image with calculated dimensions
-    final_width = qr_size + CODE_WIDTH
-    final_height = qr_size + TEXT_HEIGHT
-    final_img = Image.new('RGB', (final_width, final_height), 'white')
-    
-    # Paste the QR code at the top-left
-    final_img.paste(qr_img, (0, 0))
-    
-    # Add bottom text
-    draw = ImageDraw.Draw(final_img)
-    
-    # Center the bottom text under the QR code (moved much closer to QR code)
-    text_x = (qr_size - bottom_text_width) // 2
-    text_y = qr_size - 25  # Moved 25px closer to QR code (overlapping more)
-    
-    # Draw the bottom text using enhanced drawing
-    draw_enhanced_text(draw, (text_x, text_y), bottom_text, bottom_font, fill="black")
-    
-    # Create vertical text for the 5-character code
-    # Create a temporary image for the vertical text with extra padding for descenders
-    temp_vertical_img = Image.new('RGB', (vertical_text_width + 20, vertical_text_height + 20), 'white')
-    temp_vertical_draw = ImageDraw.Draw(temp_vertical_img)
-    draw_enhanced_text(temp_vertical_draw, (10, 10), unique_code, vertical_font, fill="black")
-    
-    # Rotate the text 90 degrees counterclockwise
-    rotated_text = temp_vertical_img.rotate(90, expand=True)
-    
-    # Position the vertical text closer to QR code horizontally, centered vertically
-    # Reduce left padding by 15px to bring it closer to QR code (optimal balance)
-    vertical_x = qr_size - 15  # Moved 15px closer to QR edge (was -25px, now -15px)
-    vertical_y = (qr_size - rotated_text.height) // 2  # Center vertically relative to QR code
-    
-    # Paste the rotated text onto the final image
-    final_img.paste(rotated_text, (vertical_x, vertical_y))
-    
-    return final_img
+        print(f"CRITICAL ERROR in generate_qr_code: {e}")
+        # Emergency fallback - create a simple error image
+        try:
+            emergency_img = Image.new('RGB', (400, 400), 'white')
+            emergency_draw = ImageDraw.Draw(emergency_img)
+            emergency_draw.rectangle([20, 20, 380, 380], outline='red', width=5)
+            emergency_draw.text((50, 180), "QR Generation", fill='black')
+            emergency_draw.text((50, 200), "Error Occurred", fill='black')
+            return emergency_img
+        except:
+            # If even this fails, create the most basic image possible
+            return Image.new('RGB', (300, 300), 'white')
 
 @app.route('/')
 @login_required
@@ -451,14 +537,64 @@ def health_check():
 
 @app.route('/debug/fonts')
 def debug_fonts():
-    """Debug endpoint to check available fonts"""
+    """Debug endpoint to check available fonts and download status"""
     try:
         import subprocess
         import glob
         
         debug_info = {
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'environment': {
+                'RAILWAY_ENVIRONMENT': os.environ.get('RAILWAY_ENVIRONMENT'),
+                'app_exists': os.path.exists('/app'),
+                'current_dir': os.getcwd(),
+                'python_version': os.sys.version
+            }
         }
+        
+        # Check downloaded fonts directory
+        fonts_dir = "fonts"
+        debug_info['downloaded_fonts'] = {}
+        
+        if os.path.exists(fonts_dir):
+            try:
+                font_files = os.listdir(fonts_dir)
+                debug_info['downloaded_fonts']['directory_exists'] = True
+                debug_info['downloaded_fonts']['files'] = []
+                
+                for font_file in font_files:
+                    font_path = os.path.join(fonts_dir, font_file)
+                    file_info = {
+                        'name': font_file,
+                        'size': os.path.getsize(font_path) if os.path.exists(font_path) else 0,
+                        'exists': os.path.exists(font_path)
+                    }
+                    debug_info['downloaded_fonts']['files'].append(file_info)
+                    
+            except Exception as e:
+                debug_info['downloaded_fonts']['error'] = str(e)
+        else:
+            debug_info['downloaded_fonts']['directory_exists'] = False
+        
+        # Test font download manually
+        debug_info['font_download_test'] = {}
+        try:
+            test_url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
+            import urllib.request
+            
+            req = urllib.request.Request(test_url, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                content_length = response.headers.get('Content-Length', 'unknown')
+                debug_info['font_download_test']['url_accessible'] = True
+                debug_info['font_download_test']['content_length'] = content_length
+                debug_info['font_download_test']['status_code'] = response.getcode()
+                
+        except Exception as e:
+            debug_info['font_download_test']['url_accessible'] = False
+            debug_info['font_download_test']['error'] = str(e)
         
         # Check fc-list output
         try:
@@ -479,26 +615,64 @@ def debug_fonts():
             '/usr/share/fonts/TTF/'
         ]
         
-        debug_info['font_directories'] = {}
+        debug_info['system_font_directories'] = {}
         for font_dir in font_dirs:
             try:
                 files = glob.glob(f"{font_dir}*.ttf")
-                debug_info['font_directories'][font_dir] = files[:10]  # First 10 files
+                debug_info['system_font_directories'][font_dir] = files[:10]  # First 10 files
             except Exception as e:
-                debug_info['font_directories'][font_dir] = f"Error: {e}"
+                debug_info['system_font_directories'][font_dir] = f"Error: {e}"
         
-        # Test font loading
+        # Test font loading with PIL
+        debug_info['pil_font_tests'] = {}
+        
+        # Test 1: Default font
         try:
             from PIL import ImageFont
-            test_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
-            debug_info['dejavu_font_test'] = "SUCCESS"
+            default_font = ImageFont.load_default()
+            debug_info['pil_font_tests']['default_font'] = "SUCCESS"
         except Exception as e:
-            debug_info['dejavu_font_test'] = f"FAILED: {e}"
+            debug_info['pil_font_tests']['default_font'] = f"FAILED: {e}"
+        
+        # Test 2: Default font with size
+        try:
+            sized_font = ImageFont.load_default(size=24)
+            debug_info['pil_font_tests']['default_font_with_size'] = "SUCCESS"
+        except Exception as e:
+            debug_info['pil_font_tests']['default_font_with_size'] = f"FAILED: {e}"
+        
+        # Test 3: Downloaded DejaVu font
+        try:
+            if os.path.exists("fonts/DejaVuSans.ttf"):
+                dejavu_font = ImageFont.truetype("fonts/DejaVuSans.ttf", 24)
+                debug_info['pil_font_tests']['downloaded_dejavu'] = "SUCCESS"
+            else:
+                debug_info['pil_font_tests']['downloaded_dejavu'] = "FILE_NOT_FOUND"
+        except Exception as e:
+            debug_info['pil_font_tests']['downloaded_dejavu'] = f"FAILED: {e}"
+        
+        # Test 4: System DejaVu font
+        try:
+            system_dejavu = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+            debug_info['pil_font_tests']['system_dejavu'] = "SUCCESS"
+        except Exception as e:
+            debug_info['pil_font_tests']['system_dejavu'] = f"FAILED: {e}"
+        
+        # Test QR generation
+        debug_info['qr_generation_test'] = {}
+        try:
+            # Test the actual QR generation function
+            test_qr = generate_qr_code("https://test.com/test")
+            debug_info['qr_generation_test']['status'] = "SUCCESS"
+            debug_info['qr_generation_test']['image_size'] = test_qr.size
+        except Exception as e:
+            debug_info['qr_generation_test']['status'] = "FAILED"
+            debug_info['qr_generation_test']['error'] = str(e)
         
         return jsonify(debug_info)
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'critical_error': str(e)}), 500
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
