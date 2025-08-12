@@ -151,19 +151,14 @@ def load_user(user_id):
 init_db()
 
 def generate_qr_code(data, size=(300, 300)):
-    """Generate QR code as PIL Image with ptm.id/ text at bottom and vertical code on right"""
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
+    """Generate QR code as PIL Image with fixed text size and scaled QR code"""
+    # Fixed text sizes for consistency
+    BOTTOM_TEXT_SIZE = 50  # Fixed size for "ptm.id/" text
+    VERTICAL_TEXT_SIZE = 46  # Fixed size for vertical code
     
-    # Generate the QR code image
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-    qr_img = qr_img.resize(size, Image.Resampling.LANCZOS)
+    # Fixed spacing (reverted to original values)
+    TEXT_HEIGHT = 65  # Fixed height for bottom text area
+    CODE_WIDTH = 60   # Fixed width for vertical text area
     
     # Generate unique 5-character code starting with "tg"
     def generate_unique_code():
@@ -177,107 +172,88 @@ def generate_qr_code(data, size=(300, 300)):
     
     unique_code = generate_unique_code()
     
-    # Create a new image with extra space at the bottom for text and right for vertical code
-    text_height = 50  # More height for much larger text
-    code_width = 40   # More width for much larger vertical text
-    new_width = size[0] + code_width
-    new_height = size[1] + text_height
-    final_img = Image.new('RGB', (new_width, new_height), 'white')
+    # Load fonts with fixed sizes
+    try:
+        # Try to use bold Arial with fixed sizes
+        bottom_font = ImageFont.truetype("arialbd.ttf", BOTTOM_TEXT_SIZE)
+        vertical_font = ImageFont.truetype("arialbd.ttf", VERTICAL_TEXT_SIZE)
+    except:
+        try:
+            # Fallback to regular Arial
+            bottom_font = ImageFont.truetype("arial.ttf", BOTTOM_TEXT_SIZE)
+            vertical_font = ImageFont.truetype("arial.ttf", VERTICAL_TEXT_SIZE)
+        except:
+            # Final fallback to default font
+            bottom_font = ImageFont.load_default()
+            vertical_font = ImageFont.load_default()
+    
+    # Create temporary image to measure text dimensions
+    temp_img = Image.new('RGB', (400, 100), 'white')
+    temp_draw = ImageDraw.Draw(temp_img)
+    
+    # Measure bottom text dimensions
+    bottom_text = "ptm.id/"
+    bottom_bbox = temp_draw.textbbox((0, 0), bottom_text, font=bottom_font)
+    bottom_text_width = bottom_bbox[2] - bottom_bbox[0]
+    
+    # Measure vertical text dimensions (before rotation)
+    vertical_bbox = temp_draw.textbbox((0, 0), unique_code, font=vertical_font)
+    vertical_text_width = vertical_bbox[2] - vertical_bbox[0]
+    vertical_text_height = vertical_bbox[3] - vertical_bbox[1]
+    
+    # Calculate required QR code size to accommodate the text
+    # The QR code should be wide enough for the bottom text and tall enough for the vertical text
+    min_qr_width = max(bottom_text_width + 10, size[0] - CODE_WIDTH)  # 10px padding
+    min_qr_height = max(vertical_text_width + 10, size[1] - TEXT_HEIGHT)  # vertical_text_width becomes height after rotation
+    
+    # Use the larger dimension to keep QR code square
+    qr_size = max(min_qr_width, min_qr_height, 200)  # Minimum 200px
+    
+    # Generate QR code with calculated size
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    
+    # Generate the QR code image
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
+    
+    # Create final image with calculated dimensions
+    final_width = qr_size + CODE_WIDTH
+    final_height = qr_size + TEXT_HEIGHT
+    final_img = Image.new('RGB', (final_width, final_height), 'white')
     
     # Paste the QR code at the top-left
     final_img.paste(qr_img, (0, 0))
     
-    # Add text at the bottom
+    # Add bottom text
     draw = ImageDraw.Draw(final_img)
     
-    try:
-        # Try to use a built-in font with bold weight and larger sizes
-        font = ImageFont.truetype("arialbd.ttf", 16)  # Bold Arial, larger size for bottom text
-        small_font = ImageFont.truetype("arialbd.ttf", 14)  # Bold Arial for vertical text
-    except:
-        try:
-            # Fallback to regular Arial with larger sizes
-            font = ImageFont.truetype("arial.ttf", 16)
-            small_font = ImageFont.truetype("arial.ttf", 14)
-        except:
-            # Final fallback to default font
-            font = ImageFont.load_default()
-            small_font = ImageFont.load_default()
-    
-    # Bottom text: "ptm.id/"
-    bottom_text = "ptm.id/"
-    
-    # Calculate optimal font size for bottom text to fit QR code width
-    max_bottom_width = size[0] - 5   # Minimal padding for very tight fit
-    current_font_size = 44  # Start with doubled font size (22 * 2)
-    
-    # Find the largest font size that fits
-    while current_font_size > 16:
-        try:
-            test_font = ImageFont.truetype("arialbd.ttf", current_font_size)
-        except:
-            try:
-                test_font = ImageFont.truetype("arial.ttf", current_font_size)
-            except:
-                test_font = ImageFont.load_default()
-        
-        bbox = draw.textbbox((0, 0), bottom_text, font=test_font)
-        text_width = bbox[2] - bbox[0]
-        
-        if text_width <= max_bottom_width:
-            font = test_font
-            break
-        current_font_size -= 1
-    
-    # Get final text dimensions and center it horizontally under the QR code
-    bbox = draw.textbbox((0, 0), bottom_text, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_x = (size[0] - text_width) // 2  # Center under QR code only
-    text_y = size[1]  # No gap - directly touching the QR code bottom edge
+    # Center the bottom text under the QR code (moved much closer to QR code)
+    text_x = (qr_size - bottom_text_width) // 2
+    text_y = qr_size - 25  # Moved 25px closer to QR code (overlapping more)
     
     # Draw the bottom text
-    draw.text((text_x, text_y), bottom_text, fill="black", font=font)
+    draw.text((text_x, text_y), bottom_text, fill="black", font=bottom_font)
     
-    # Create vertical text for the 5-digit code on the right side
-    # Calculate optimal font size for vertical text to fit QR code height
-    max_vertical_height = size[1] - 5   # Minimal padding for very tight fit
-    vertical_font_size = 36  # Start with doubled font size (18 * 2)
+    # Create vertical text for the 5-character code
+    # Create a temporary image for the vertical text with extra padding for descenders
+    temp_vertical_img = Image.new('RGB', (vertical_text_width + 20, vertical_text_height + 20), 'white')
+    temp_vertical_draw = ImageDraw.Draw(temp_vertical_img)
+    temp_vertical_draw.text((10, 10), unique_code, fill="black", font=vertical_font)
     
-    # Find the largest font size that fits vertically
-    while vertical_font_size > 12:
-        try:
-            test_vertical_font = ImageFont.truetype("arialbd.ttf", vertical_font_size)
-        except:
-            try:
-                test_vertical_font = ImageFont.truetype("arial.ttf", vertical_font_size)
-            except:
-                test_vertical_font = ImageFont.load_default()
-        
-        # Create temporary image to measure rotated text height
-        temp_test_img = Image.new('RGB', (150, 60), 'white')
-        temp_test_draw = ImageDraw.Draw(temp_test_img)
-        temp_test_draw.text((10, 10), unique_code, fill="black", font=test_vertical_font)
-        rotated_test = temp_test_img.rotate(90, expand=True)
-        
-        if rotated_test.height <= max_vertical_height:
-            small_font = test_vertical_font
-            break
-        vertical_font_size -= 1
+    # Rotate the text 90 degrees counterclockwise
+    rotated_text = temp_vertical_img.rotate(90, expand=True)
     
-    # Create a temporary image for the vertical text with proper sizing
-    temp_img_width = max(100, vertical_font_size + 20)
-    temp_img_height = max(60, vertical_font_size + 20)
-    temp_img = Image.new('RGB', (temp_img_width, temp_img_height), 'white')
-    temp_draw = ImageDraw.Draw(temp_img)
-    temp_draw.text((15, 5), unique_code, fill="black", font=small_font)  # Move text to top of temp image
-    
-    # Rotate the text 90 degrees anticlockwise (counterclockwise)
-    rotated_text = temp_img.rotate(90, expand=True)
-    
-    # Calculate position for the vertical text on the right side of QR code
-    # Position it centered vertically relative to the QR code
-    vertical_x = size[0]  # Directly touching the QR code right edge
-    vertical_y = (size[1] - rotated_text.height) // 2  # Center vertically relative to QR code
+    # Position the vertical text closer to QR code horizontally, centered vertically
+    # Reduce left padding by 15px to bring it closer to QR code (optimal balance)
+    vertical_x = qr_size - 15  # Moved 15px closer to QR edge (was -25px, now -15px)
+    vertical_y = (qr_size - rotated_text.height) // 2  # Center vertically relative to QR code
     
     # Paste the rotated text onto the final image
     final_img.paste(rotated_text, (vertical_x, vertical_y))
