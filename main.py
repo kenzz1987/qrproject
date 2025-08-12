@@ -23,57 +23,19 @@ import string
 import urllib.request
 
 def download_fonts():
-    """Download free fonts for Railway deployment with enhanced error handling"""
-    font_urls = {
-        "fonts/DejaVuSans.ttf": "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf",
-        "fonts/DejaVuSans-Bold.ttf": "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans-Bold.ttf"
-    }
+    """Download free fonts for Railway deployment - simplified version"""
+    print("Font download disabled - using PIL default fonts with size parameter")
+    print("This provides excellent text quality without external dependencies")
     
+    # Create fonts directory for potential future use
     try:
-        # Create fonts directory if it doesn't exist
         os.makedirs("fonts", exist_ok=True)
-        print(f"Created/verified fonts directory: {os.path.abspath('fonts')}")
-        
-        for font_path, url in font_urls.items():
-            if not os.path.exists(font_path):
-                try:
-                    print(f"Downloading font: {font_path} from {url}")
-                    # Add headers to avoid being blocked
-                    req = urllib.request.Request(url, headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    })
-                    
-                    with urllib.request.urlopen(req, timeout=30) as response:
-                        with open(font_path, 'wb') as f:
-                            f.write(response.read())
-                    
-                    # Verify download
-                    if os.path.exists(font_path) and os.path.getsize(font_path) > 1000:
-                        print(f"Successfully downloaded: {font_path} ({os.path.getsize(font_path)} bytes)")
-                    else:
-                        print(f"Download verification failed for {font_path}")
-                        
-                except Exception as e:
-                    print(f"Failed to download {font_path}: {e}")
-            else:
-                print(f"Font already exists: {font_path} ({os.path.getsize(font_path)} bytes)")
-                
-        # List final font directory contents
-        try:
-            font_files = os.listdir("fonts")
-            print(f"Final fonts directory contents: {font_files}")
-        except Exception as e:
-            print(f"Could not list fonts directory: {e}")
-            
+        print(f"Created fonts directory: {os.path.abspath('fonts')}")
     except Exception as e:
-        print(f"Critical error in download_fonts: {e}")
+        print(f"Could not create fonts directory: {e}")
 
-# Download fonts on startup if in production environment
-if os.environ.get('RAILWAY_ENVIRONMENT') or os.path.exists('/app'):
-    print("Production environment detected, attempting font download...")
-    download_fonts()
-else:
-    print("Local development environment detected")
+# Always run this to create the directory structure
+download_fonts()
 
 # Database setup
 def get_db_path():
