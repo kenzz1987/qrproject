@@ -1,4 +1,7 @@
 fontconfig
+fonts-dejavu-core
 fonts-dejavu
 fonts-liberation
 fonts-ubuntu
+ttf-dejavu-core
+fc-cache

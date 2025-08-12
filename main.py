@@ -179,45 +179,72 @@ def generate_qr_code(data, size=(300, 300)):
     
     unique_code = generate_unique_code()
     
-    # Load fonts with fixed sizes - improved Railway compatibility
+    # Load fonts with fixed sizes - improved Railway compatibility with extensive debugging
     font_paths = [
         # Windows fonts
         "arialbd.ttf",
         "arial.ttf",
-        # Linux/Railway fonts
+        # Linux/Railway fonts - DejaVu (most reliable)
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        # Liberation fonts (Arial alternatives)
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         # Ubuntu fonts
         "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
-        "/usr/share/fonts/truetype/ubuntu/Ubuntu-Regular.ttf"
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-Regular.ttf",
+        # Additional common Linux fonts
+        "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/System/Library/Fonts/Arial.ttf",  # macOS
+        "/System/Library/Fonts/ArialBold.ttf"  # macOS
     ]
     
     bottom_font = None
     vertical_font = None
     
+    print(f"Attempting to load fonts with sizes: bottom={BOTTOM_TEXT_SIZE}, vertical={VERTICAL_TEXT_SIZE}")
+    
+    # Check what fonts are available in the system
+    try:
+        import subprocess
+        result = subprocess.run(['fc-list'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            available_fonts = result.stdout[:500]  # First 500 chars to avoid spam
+            print(f"Available system fonts (sample): {available_fonts}")
+        else:
+            print("fc-list command failed")
+    except Exception as e:
+        print(f"Could not check system fonts: {e}")
+    
     # Try each font path
-    for font_path in font_paths:
+    for i, font_path in enumerate(font_paths):
         try:
+            print(f"Trying font {i+1}/{len(font_paths)}: {font_path}")
             bottom_font = ImageFont.truetype(font_path, BOTTOM_TEXT_SIZE)
             vertical_font = ImageFont.truetype(font_path, VERTICAL_TEXT_SIZE)
-            print(f"Using font: {font_path}")
+            print(f"SUCCESS: Using font: {font_path} with sizes {BOTTOM_TEXT_SIZE}/{VERTICAL_TEXT_SIZE}")
             break
-        except (OSError, IOError):
+        except (OSError, IOError) as e:
+            print(f"Failed to load {font_path}: {e}")
             continue
     
-    # Final fallback to default font with size if no TrueType fonts found
+    # If no TrueType fonts found, try to create a larger default font
     if bottom_font is None:
-        print("Warning: No TrueType fonts found, using default font")
+        print("WARNING: No TrueType fonts found, attempting larger default font")
         try:
-            # Try to load default with size
+            # Try PIL's load_default with size parameter (newer versions)
+            from PIL import ImageFont
+            bottom_font = ImageFont.load_default(size=BOTTOM_TEXT_SIZE)
+            vertical_font = ImageFont.load_default(size=VERTICAL_TEXT_SIZE)
+            print(f"Using default font with requested sizes: {BOTTOM_TEXT_SIZE}/{VERTICAL_TEXT_SIZE}")
+        except TypeError:
+            # Older PIL versions don't support size parameter
+            print("Default font doesn't support size parameter, using standard default")
             bottom_font = ImageFont.load_default()
             vertical_font = ImageFont.load_default()
-        except:
-            # Last resort
-            bottom_font = ImageFont.load_default()
-            vertical_font = ImageFont.load_default()
+            
+    print(f"Final fonts loaded: bottom_font={type(bottom_font)}, vertical_font={type(vertical_font)}")
     
     # Create temporary image to measure text dimensions
     temp_img = Image.new('RGB', (400, 100), 'white')
@@ -332,6 +359,57 @@ def health_check():
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }), 500
+
+@app.route('/debug/fonts')
+def debug_fonts():
+    """Debug endpoint to check available fonts"""
+    try:
+        import subprocess
+        import glob
+        
+        debug_info = {
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Check fc-list output
+        try:
+            result = subprocess.run(['fc-list'], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                fonts_list = result.stdout.split('\n')[:20]  # First 20 fonts
+                debug_info['fc_list_sample'] = fonts_list
+            else:
+                debug_info['fc_list_error'] = result.stderr
+        except Exception as e:
+            debug_info['fc_list_exception'] = str(e)
+        
+        # Check font directories
+        font_dirs = [
+            '/usr/share/fonts/truetype/dejavu/',
+            '/usr/share/fonts/truetype/liberation/',
+            '/usr/share/fonts/truetype/ubuntu/',
+            '/usr/share/fonts/TTF/'
+        ]
+        
+        debug_info['font_directories'] = {}
+        for font_dir in font_dirs:
+            try:
+                files = glob.glob(f"{font_dir}*.ttf")
+                debug_info['font_directories'][font_dir] = files[:10]  # First 10 files
+            except Exception as e:
+                debug_info['font_directories'][font_dir] = f"Error: {e}"
+        
+        # Test font loading
+        try:
+            from PIL import ImageFont
+            test_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+            debug_info['dejavu_font_test'] = "SUCCESS"
+        except Exception as e:
+            debug_info['dejavu_font_test'] = f"FAILED: {e}"
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
