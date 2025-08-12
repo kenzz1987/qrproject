@@ -1,0 +1,19 @@
+# Nixpacks configuration for Railway
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.11"
+
+[phases.setup]
+nixPkgs = ["python311", "gcc"]
+
+[phases.install]
+cmds = [
+    "pip install --no-cache-dir -r requirements.txt"
+]
+
+[phases.build]
+cmds = [
+    "python -c 'import main; print(\"App imports successfully\")'"
+]
+
+[start]
+cmd = "python migrate_railway_db.py && gunicorn main:app --bind 0.0.0.0:$PORT --workers 1 --timeout 60"

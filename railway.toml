@@ -4,9 +4,9 @@
 builder = "NIXPACKS"
 
 [deploy]
-startCommand = "python migrate_railway_db.py && gunicorn main:app --bind 0.0.0.0:$PORT"
+startCommand = "python migrate_railway_db.py && gunicorn main:app --bind 0.0.0.0:$PORT --workers 1 --max-requests 100 --timeout 60 --keep-alive 2"
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
+restartPolicyMaxRetries = 5
 
 # Persistent volume for database
 [[deploy.volumes]]
@@ -16,3 +16,4 @@ mountPath = "/app/data"
 PORT = "8080"
 FLASK_ENV = "production"
 DATABASE_PATH = "/app/data/qr_codes.db"
+PYTHONUNBUFFERED = "1"

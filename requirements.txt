@@ -1,6 +1,6 @@
-# QR Project Requirements
-flask>=2.3.0
-flask-login>=0.6.3
-qrcode[pil]>=7.4.2
-pillow>=10.0.0
-gunicorn>=21.2.0
+# QR Project Requirements - Optimized for Railway
+flask==3.1.1
+flask-login==0.6.3
+qrcode==8.2
+pillow==11.3.0
+gunicorn==23.0.0

@@ -23,16 +23,12 @@ import string
 import urllib.request
 
 def download_fonts():
-    """Download free fonts for Railway deployment - simplified version"""
-    print("Font download disabled - using PIL default fonts with size parameter")
-    print("This provides excellent text quality without external dependencies")
-    
-    # Create fonts directory for potential future use
+    """Minimal font setup - no external downloads"""
+    # Simple directory creation - no external downloads
     try:
         os.makedirs("fonts", exist_ok=True)
-        print(f"Created fonts directory: {os.path.abspath('fonts')}")
-    except Exception as e:
-        print(f"Could not create fonts directory: {e}")
+    except:
+        pass  # Silent fail if directory creation fails
 
 # Always run this to create the directory structure
 download_fonts()

@@ -1,0 +1,49 @@
+# Ignore unnecessary files to reduce build context
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.git/
+.gitignore
+README.md
+*.md
+.env
+.venv/
+venv/
+env/
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Development files
+test.py
+test_password.py
+backup_db.py
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store?
+ehthumbs.db
+Icon?
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
