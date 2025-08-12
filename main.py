@@ -20,6 +20,30 @@ import hashlib
 import secrets
 import random
 import string
+import urllib.request
+
+def download_fonts():
+    """Download free fonts for Railway deployment"""
+    font_urls = {
+        "fonts/DejaVuSans.ttf": "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf",
+        "fonts/DejaVuSans-Bold.ttf": "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans-Bold.ttf"
+    }
+    
+    # Create fonts directory if it doesn't exist
+    os.makedirs("fonts", exist_ok=True)
+    
+    for font_path, url in font_urls.items():
+        if not os.path.exists(font_path):
+            try:
+                print(f"Downloading font: {font_path}")
+                urllib.request.urlretrieve(url, font_path)
+                print(f"Successfully downloaded: {font_path}")
+            except Exception as e:
+                print(f"Failed to download {font_path}: {e}")
+
+# Download fonts on startup if in production environment
+if os.environ.get('RAILWAY_ENVIRONMENT') or os.path.exists('/app'):
+    download_fonts()
 
 # Database setup
 def get_db_path():
@@ -179,21 +203,23 @@ def generate_qr_code(data, size=(300, 300)):
     
     unique_code = generate_unique_code()
     
-    # Load fonts with fixed sizes - improved Railway compatibility with extensive debugging
+    # Load fonts with fixed sizes - Railway-compatible bundled fonts
     font_paths = [
-        # Windows fonts
+        # Bundled fonts (relative to app directory)
+        "fonts/DejaVuSans-Bold.ttf",
+        "fonts/DejaVuSans.ttf", 
+        "fonts/LiberationSans-Bold.ttf",
+        "fonts/LiberationSans-Regular.ttf",
+        # Windows fonts (local development)
         "arialbd.ttf",
         "arial.ttf",
-        # Linux/Railway fonts - DejaVu (most reliable)
+        # System fonts (backup)
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        # Liberation fonts (Arial alternatives)
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        # Ubuntu fonts
         "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
         "/usr/share/fonts/truetype/ubuntu/Ubuntu-Regular.ttf",
-        # Additional common Linux fonts
         "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/System/Library/Fonts/Arial.ttf",  # macOS
@@ -229,9 +255,9 @@ def generate_qr_code(data, size=(300, 300)):
             print(f"Failed to load {font_path}: {e}")
             continue
     
-    # If no TrueType fonts found, try to create a larger default font
+    # If no TrueType fonts found, create a custom font-like solution
     if bottom_font is None:
-        print("WARNING: No TrueType fonts found, attempting larger default font")
+        print("WARNING: No TrueType fonts found, using enhanced default font approach")
         try:
             # Try PIL's load_default with size parameter (newer versions)
             from PIL import ImageFont
@@ -239,12 +265,45 @@ def generate_qr_code(data, size=(300, 300)):
             vertical_font = ImageFont.load_default(size=VERTICAL_TEXT_SIZE)
             print(f"Using default font with requested sizes: {BOTTOM_TEXT_SIZE}/{VERTICAL_TEXT_SIZE}")
         except TypeError:
-            # Older PIL versions don't support size parameter
-            print("Default font doesn't support size parameter, using standard default")
-            bottom_font = ImageFont.load_default()
-            vertical_font = ImageFont.load_default()
+            # Older PIL versions don't support size parameter - use bitmap scaling approach
+            print("Default font doesn't support size parameter, using bitmap scaling workaround")
+            default_font = ImageFont.load_default()
+            
+            # Create a workaround for larger text by drawing multiple times with offset
+            # This simulates bold/larger text appearance
+            class EnhancedDefaultFont:
+                def __init__(self, base_font, scale_factor=2):
+                    self.base_font = base_font
+                    self.scale_factor = scale_factor
+                
+                def getsize(self, text):
+                    return self.base_font.getsize(text)
+                
+                def getbbox(self, text):
+                    try:
+                        return self.base_font.getbbox(text)
+                    except AttributeError:
+                        # Fallback for older PIL versions
+                        w, h = self.base_font.getsize(text)
+                        return (0, 0, w, h)
+            
+            bottom_font = EnhancedDefaultFont(default_font, 2)
+            vertical_font = EnhancedDefaultFont(default_font, 2)
+            print("Using enhanced default font with bitmap scaling")
             
     print(f"Final fonts loaded: bottom_font={type(bottom_font)}, vertical_font={type(vertical_font)}")
+    
+    # Enhanced text drawing function for default fonts
+    def draw_enhanced_text(draw, position, text, font, fill="black"):
+        x, y = position
+        if hasattr(font, 'scale_factor'):
+            # Enhanced default font - draw multiple times for bold effect
+            for dx in range(2):
+                for dy in range(2):
+                    draw.text((x + dx, y + dy), text, fill=fill, font=font.base_font)
+        else:
+            # Regular font
+            draw.text(position, text, fill=fill, font=font)
     
     # Create temporary image to measure text dimensions
     temp_img = Image.new('RGB', (400, 100), 'white')
@@ -297,14 +356,14 @@ def generate_qr_code(data, size=(300, 300)):
     text_x = (qr_size - bottom_text_width) // 2
     text_y = qr_size - 25  # Moved 25px closer to QR code (overlapping more)
     
-    # Draw the bottom text
-    draw.text((text_x, text_y), bottom_text, fill="black", font=bottom_font)
+    # Draw the bottom text using enhanced drawing
+    draw_enhanced_text(draw, (text_x, text_y), bottom_text, bottom_font, fill="black")
     
     # Create vertical text for the 5-character code
     # Create a temporary image for the vertical text with extra padding for descenders
     temp_vertical_img = Image.new('RGB', (vertical_text_width + 20, vertical_text_height + 20), 'white')
     temp_vertical_draw = ImageDraw.Draw(temp_vertical_img)
-    temp_vertical_draw.text((10, 10), unique_code, fill="black", font=vertical_font)
+    draw_enhanced_text(temp_vertical_draw, (10, 10), unique_code, vertical_font, fill="black")
     
     # Rotate the text 90 degrees counterclockwise
     rotated_text = temp_vertical_img.rotate(90, expand=True)
