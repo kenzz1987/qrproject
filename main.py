@@ -293,31 +293,61 @@ def generate_qr_code(data, size=(300, 300)):
             
     print(f"Final fonts loaded: bottom_font={type(bottom_font)}, vertical_font={type(vertical_font)}")
     
-    # Enhanced text drawing function for default fonts
+    # Enhanced text drawing function for default fonts with error handling
     def draw_enhanced_text(draw, position, text, font, fill="black"):
         x, y = position
-        if hasattr(font, 'scale_factor'):
-            # Enhanced default font - draw multiple times for bold effect
-            for dx in range(2):
-                for dy in range(2):
-                    draw.text((x + dx, y + dy), text, fill=fill, font=font.base_font)
-        else:
-            # Regular font
-            draw.text(position, text, fill=fill, font=font)
+        try:
+            if hasattr(font, 'scale_factor'):
+                # Enhanced default font - draw multiple times for bold effect
+                for dx in range(2):
+                    for dy in range(2):
+                        draw.text((x + dx, y + dy), text, fill=fill, font=font.base_font)
+            else:
+                # Regular font
+                draw.text(position, text, fill=fill, font=font)
+        except Exception as e:
+            print(f"Error drawing text '{text}': {e}")
+            # Fallback to basic drawing
+            try:
+                if hasattr(font, 'base_font'):
+                    draw.text(position, text, fill=fill, font=font.base_font)
+                else:
+                    draw.text(position, text, fill=fill, font=ImageFont.load_default())
+            except Exception as e2:
+                print(f"Fallback text drawing also failed: {e2}")
+                # Last resort - draw without font
+                draw.text(position, text, fill=fill)
     
     # Create temporary image to measure text dimensions
     temp_img = Image.new('RGB', (400, 100), 'white')
     temp_draw = ImageDraw.Draw(temp_img)
     
-    # Measure bottom text dimensions
+    # Measure bottom text dimensions with fallback for enhanced fonts
     bottom_text = "ptm.id/"
-    bottom_bbox = temp_draw.textbbox((0, 0), bottom_text, font=bottom_font)
-    bottom_text_width = bottom_bbox[2] - bottom_bbox[0]
+    try:
+        if hasattr(bottom_font, 'getbbox'):
+            bottom_bbox = bottom_font.getbbox(bottom_text)
+        else:
+            bottom_bbox = temp_draw.textbbox((0, 0), bottom_text, font=bottom_font)
+        bottom_text_width = bottom_bbox[2] - bottom_bbox[0]
+    except Exception as e:
+        print(f"Error measuring bottom text, using fallback: {e}")
+        # Fallback: estimate text width
+        bottom_text_width = len(bottom_text) * 12  # Rough estimate
     
-    # Measure vertical text dimensions (before rotation)
-    vertical_bbox = temp_draw.textbbox((0, 0), unique_code, font=vertical_font)
-    vertical_text_width = vertical_bbox[2] - vertical_bbox[0]
-    vertical_text_height = vertical_bbox[3] - vertical_bbox[1]
+    # Measure vertical text dimensions with fallback
+    try:
+        if hasattr(vertical_font, 'getbbox'):
+            vertical_bbox = vertical_font.getbbox(unique_code)
+        else:
+            vertical_bbox = temp_draw.textbbox((0, 0), unique_code, font=vertical_font)
+        vertical_text_width = vertical_bbox[2] - vertical_bbox[0]
+        vertical_text_height = vertical_bbox[3] - vertical_bbox[1]
+    except Exception as e:
+        print(f"Error measuring vertical text, using fallback: {e}")
+        # Fallback: estimate text dimensions
+        vertical_text_width = len(unique_code) * 10
+        vertical_text_height = 12
     
     # Calculate required QR code size to accommodate the text
     # The QR code should be wide enough for the bottom text and tall enough for the vertical text
