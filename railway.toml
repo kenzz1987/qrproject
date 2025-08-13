@@ -1,12 +1,9 @@
-# Railway deployment configuration
-
-[build]
-builder = "NIXPACKS"
+# Railway deployment configuration - simplified
 
 [deploy]
 startCommand = "python migrate_railway_db.py && gunicorn main:app --bind 0.0.0.0:$PORT --workers 1 --max-requests 100 --timeout 60 --keep-alive 2"
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 5
+restartPolicyMaxRetries = 3
 
 # Persistent volume for database
 [[deploy.volumes]]
