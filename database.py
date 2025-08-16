@@ -93,6 +93,30 @@ class DatabaseManager:
             conn.commit()
             return cursor.rowcount
     
+    def execute_transaction(self, queries_with_params):
+        """Execute multiple queries in a single transaction
+        
+        Args:
+            queries_with_params: List of tuples (query, params) to execute atomically
+            
+        Returns:
+            List of results for queries that fetch data, None for others
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            results = []
+            
+            for query, params in queries_with_params:
+                cursor.execute(query, params or ())
+                # Check if this is a SELECT query by looking for RETURNING or fetch expectations
+                if query.strip().upper().startswith('SELECT') or 'RETURNING' in query.upper():
+                    results.append(cursor.fetchall())
+                else:
+                    results.append(cursor.rowcount)
+            
+            conn.commit()
+            return results
+    
     def init_tables(self):
         """Initialize PostgreSQL database tables"""
         logger.info(f"Initializing {self.db_type} database tables...")
@@ -134,6 +158,9 @@ class DatabaseManager:
             'CREATE INDEX IF NOT EXISTS idx_qr_codes_expired ON qr_codes(is_expired)',
             'CREATE INDEX IF NOT EXISTS idx_qr_codes_created_at ON qr_codes(created_at)',
             'CREATE INDEX IF NOT EXISTS idx_business_cards_company ON business_cards USING gin(to_tsvector(\'english\', company_name))',
+            
+            # Compound index for QR code scanning optimization
+            'CREATE INDEX IF NOT EXISTS idx_qr_codes_scan_lookup ON qr_codes(id, business_card_id, is_expired)',
         ]
         
         for query in queries:

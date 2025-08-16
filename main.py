@@ -20,7 +20,11 @@ import secrets
 import random
 import string
 import urllib.request
+import logging
 from database import get_db_manager
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 def download_fonts():
     """Minimal font setup - no external downloads"""
@@ -837,13 +841,13 @@ def business_card_landing(card_id):
         qr_id = request.args.get('qr')
         
         if qr_id:
-            # Single optimized query to get both business card and QR code info
+            # Optimized query with INNER JOIN for faster QR code scanning
             query = '''
                 SELECT bc.name, bc.company_name, bc.phone, bc.scan_count,
                        qr.id, qr.is_expired
-                FROM business_cards bc
-                LEFT JOIN qr_codes qr ON bc.id = qr.business_card_id
-                WHERE bc.id = %s AND qr.id = %s
+                FROM qr_codes qr
+                INNER JOIN business_cards bc ON qr.business_card_id = bc.id
+                WHERE qr.id = %s AND qr.business_card_id = %s
             '''
             fallback_query = 'SELECT name FROM business_cards WHERE id = %s'
             update_qr_query = '''
@@ -857,7 +861,7 @@ def business_card_landing(card_id):
                 WHERE id = %s
             '''
             
-            result = db_manager.execute_query(query, (card_id, qr_id), fetch='one')
+            result = db_manager.execute_query(query, (qr_id, card_id), fetch='one')
             
             if not result:
                 # Fallback: check if business card exists but QR doesn't belong to it
@@ -888,12 +892,22 @@ def business_card_landing(card_id):
                                      status='expired', 
                                      message='QR code ini sudah pernah digunakan')
             
-            # First-time scan: Mark QR as used and increment scan count
-            db_manager.execute_query(update_qr_query, (qr_id,))
-            db_manager.execute_query(update_card_query, (card_id,))
+            # First-time scan: Execute both updates in a single transaction for better performance
+            # This reduces network round trips from 2 to 1 and ensures data consistency
+            transaction_queries = [
+                (update_qr_query, (qr_id,)),
+                (update_card_query, (card_id,))
+            ]
             
-            # Use the incremented scan count
-            updated_count = scan_count + 1
+            try:
+                db_manager.execute_transaction(transaction_queries)
+                # Use the incremented scan count
+                updated_count = scan_count + 1
+            except Exception as e:
+                logger.error(f"Transaction failed during QR scan: {e}")
+                return render_template('scan_result.html', 
+                                     status='error', 
+                                     message='Error memproses scan QR code')
             
         else:
             # Direct access without QR code - single query
