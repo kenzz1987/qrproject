@@ -12,7 +12,6 @@ import io
 import zipfile
 import uuid
 import os
-import sqlite3
 from datetime import datetime
 import tempfile
 import shutil
@@ -21,6 +20,7 @@ import secrets
 import random
 import string
 import urllib.request
+from database import get_db_manager
 
 def download_fonts():
     """Minimal font setup - no external downloads"""
@@ -32,110 +32,6 @@ def download_fonts():
 
 # Always run this to create the directory structure
 download_fonts()
-
-# Database setup
-def get_db_path():
-    """Get database path - use persistent volume on Railway"""
-    # Check for Railway environment variables
-    railway_data_path = os.environ.get('DATABASE_PATH', '/app/data/qr_codes.db')
-    
-    # Check if we're running on Railway or similar container environment
-    if os.environ.get('RAILWAY_ENVIRONMENT') or os.path.exists('/app'):
-        # Ensure the data directory exists
-        data_dir = os.path.dirname(railway_data_path)
-        os.makedirs(data_dir, exist_ok=True)
-        print(f"Using Railway database path: {railway_data_path}")
-        print(f"Data directory exists: {os.path.exists(data_dir)}")
-        return railway_data_path
-    else:
-        # Local development
-        local_path = 'qr_codes.db'
-        print(f"Using local database path: {local_path}")
-        return local_path
-
-def init_db():
-    """Initialize SQLite database"""
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # QR codes table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS qr_codes (
-            id TEXT PRIMARY KEY,
-            code_data TEXT UNIQUE NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            scanned_at TIMESTAMP NULL,
-            is_expired BOOLEAN DEFAULT FALSE,
-            metadata TEXT
-        )
-    ''')
-    
-    # Business cards table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS business_cards (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            company_name TEXT NOT NULL,
-            phone TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            scan_count INTEGER DEFAULT 0
-        )
-    ''')
-    
-    # Check if we need to migrate existing table structure
-    cursor.execute("PRAGMA table_info(business_cards)")
-    columns_info = cursor.fetchall()
-    
-    # Check if name and phone columns are still NOT NULL
-    name_is_not_null = any(col[1] == 'name' and col[3] == 1 for col in columns_info)
-    phone_is_not_null = any(col[1] == 'phone' and col[3] == 1 for col in columns_info)
-    
-    if name_is_not_null or phone_is_not_null:
-        # Need to recreate table to allow NULL values for name and phone
-        cursor.execute('BEGIN TRANSACTION')
-        
-        # Create new table with correct schema
-        cursor.execute('''
-            CREATE TABLE business_cards_new (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                company_name TEXT NOT NULL,
-                phone TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                scan_count INTEGER DEFAULT 0
-            )
-        ''')
-        
-        # Copy data from old table to new table
-        cursor.execute('''
-            INSERT INTO business_cards_new (id, name, company_name, phone, created_at, scan_count)
-            SELECT id, name, company_name, phone, created_at, scan_count
-            FROM business_cards
-        ''')
-        
-        # Drop old table and rename new table
-        cursor.execute('DROP TABLE business_cards')
-        cursor.execute('ALTER TABLE business_cards_new RENAME TO business_cards')
-        
-        cursor.execute('COMMIT')
-    
-    # Check if business_card_id column exists in qr_codes table
-    cursor.execute("PRAGMA table_info(qr_codes)")
-    columns = [column[1] for column in cursor.fetchall()]
-    
-    if 'business_card_id' not in columns:
-        # Add the business_card_id column if it doesn't exist
-        cursor.execute('ALTER TABLE qr_codes ADD COLUMN business_card_id TEXT NULL')
-    
-    # Create indexes for better performance
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_codes_business_card_id ON qr_codes(business_card_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_codes_expired ON qr_codes(is_expired)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_qr_codes_lookup ON qr_codes(id, business_card_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_business_cards_company ON business_cards(company_name COLLATE NOCASE)')
-    
-    conn.commit()
-    conn.close()
 
 # User class for authentication
 class User(UserMixin):
@@ -167,7 +63,8 @@ def load_user(user_id):
     return None
 
 # Initialize database when the module is imported
-init_db()
+db_manager = get_db_manager()
+db_manager.init_tables()
 
 def generate_qr_code(data, size=(300, 300)):
     """Generate QR code as PIL Image with bulletproof fallback system"""
@@ -426,7 +323,7 @@ def generate_qr_code(data, size=(300, 300)):
             if safe_draw_text(temp_vertical_draw, (10, 10), unique_code, vertical_font, fill="black"):
                 # Rotate and paste
                 rotated_text = temp_vertical_img.rotate(90, expand=True)
-                vertical_x = qr_size - 15
+                vertical_x = qr_size - 25  # Moved 10px to the left from original position
                 vertical_y = max(0, (qr_size - rotated_text.height) // 2)
                 final_img.paste(rotated_text, (vertical_x, vertical_y))
             else:
@@ -474,21 +371,20 @@ def business_cards():
 def health_check():
     """Health check endpoint for monitoring"""
     try:
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute('SELECT 1')
-        conn.close()
+        # Test database connection
+        result = db_manager.execute_query('SELECT 1', fetch='one')
+        
         return jsonify({
             'status': 'healthy',
             'database': 'connected',
-            'db_path': db_path,
+            'db_type': db_manager.db_type,
             'timestamp': datetime.now().isoformat()
         }), 200
     except Exception as e:
         return jsonify({
             'status': 'unhealthy',
             'database': 'error',
+            'db_type': db_manager.db_type,
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }), 500
@@ -671,45 +567,56 @@ def get_business_cards():
     try:
         search_query = request.args.get('search', '').strip()
         
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
         if search_query:
             # Search by company name (case-insensitive)
-            cursor.execute('''
+            query = '''
                 SELECT bc.id, bc.name, bc.company_name, bc.phone, bc.created_at, bc.scan_count,
                        COUNT(qr.id) as qr_count
                 FROM business_cards bc
                 LEFT JOIN qr_codes qr ON bc.id = qr.business_card_id
-                WHERE LOWER(bc.company_name) LIKE LOWER(?)
+                WHERE bc.company_name ILIKE %s
                 GROUP BY bc.id, bc.name, bc.company_name, bc.phone, bc.created_at, bc.scan_count
                 ORDER BY bc.created_at DESC
-            ''', (f'%{search_query}%',))
+            '''
+            params = (f'%{search_query}%',)
         else:
             # Get all business cards
-            cursor.execute('''
+            query = '''
                 SELECT bc.id, bc.name, bc.company_name, bc.phone, bc.created_at, bc.scan_count,
                        COUNT(qr.id) as qr_count
                 FROM business_cards bc
                 LEFT JOIN qr_codes qr ON bc.id = qr.business_card_id
                 GROUP BY bc.id, bc.name, bc.company_name, bc.phone, bc.created_at, bc.scan_count
                 ORDER BY bc.created_at DESC
-            ''')
+            '''
+            params = None
+        
+        results = db_manager.execute_query(query, params, fetch='all')
         
         cards = []
-        for row in cursor.fetchall():
-            cards.append({
-                'id': row[0],
-                'name': row[1],
-                'company_name': row[2],
-                'phone': row[3],
-                'created_at': row[4],
-                'scan_count': row[5],
-                'qr_count': row[6]
-            })
+        for row in results:
+            # Handle both dict-like (PostgreSQL) and tuple-like (SQLite) rows
+            if hasattr(row, 'keys'):  # Dict-like
+                cards.append({
+                    'id': str(row['id']),
+                    'name': row['name'] or '',
+                    'company_name': row['company_name'],
+                    'phone': row['phone'] or '',
+                    'created_at': str(row['created_at']),
+                    'scan_count': row['scan_count'],
+                    'qr_count': row['qr_count']
+                })
+            else:  # Tuple-like
+                cards.append({
+                    'id': str(row[0]),
+                    'name': row[1] or '',
+                    'company_name': row[2],
+                    'phone': row[3] or '',
+                    'created_at': str(row[4]),
+                    'scan_count': row[5],
+                    'qr_count': row[6]
+                })
         
-        conn.close()
         return jsonify({'success': True, 'cards': cards})
     
     except Exception as e:
@@ -734,19 +641,12 @@ def create_business_card():
         if not phone:
             phone = ''
         
+        # Generate UUID for PostgreSQL
         card_id = str(uuid.uuid4())
         
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            'INSERT INTO business_cards (id, name, company_name, phone) VALUES (?, ?, ?, ?)',
-            (card_id, name, company_name, phone)
-        )
-        
-        conn.commit()
-        conn.close()
+        # Insert business card
+        query = 'INSERT INTO business_cards (id, name, company_name, phone) VALUES (%s, %s, %s, %s)'
+        db_manager.execute_query(query, (card_id, name, company_name, phone))
         
         return jsonify({
             'success': True,
@@ -766,30 +666,29 @@ def create_business_card():
 def delete_business_card(card_id):
     """Delete a business card and all its QR codes"""
     try:
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        # Define queries for PostgreSQL
+        check_query = 'SELECT name FROM business_cards WHERE id = %s'
+        delete_qr_query = 'DELETE FROM qr_codes WHERE business_card_id = %s'
+        delete_card_query = 'DELETE FROM business_cards WHERE id = %s'
         
-        # Check if business card exists
-        cursor.execute('SELECT name FROM business_cards WHERE id = ?', (card_id,))
-        card = cursor.fetchone()
+        # Check if card exists
+        result = db_manager.execute_query(check_query, (card_id,), fetch='one')
         
-        if not card:
+        if not result:
             return jsonify({'error': 'Kartu nama tidak ditemukan'}), 404
         
+        # Get card name for response
+        card_name = result[0] if isinstance(result, (list, tuple)) else result['name']
+        
         # Delete all QR codes associated with this business card
-        cursor.execute('DELETE FROM qr_codes WHERE business_card_id = ?', (card_id,))
-        deleted_qr_count = cursor.rowcount
+        db_manager.execute_query(delete_qr_query, (card_id,))
         
         # Delete the business card
-        cursor.execute('DELETE FROM business_cards WHERE id = ?', (card_id,))
-        
-        conn.commit()
-        conn.close()
+        db_manager.execute_query(delete_card_query, (card_id,))
         
         return jsonify({
             'success': True,
-            'message': f'Kartu nama "{card[0]}" dan {deleted_qr_count} QR code berhasil dihapus'
+            'message': f'Kartu nama "{card_name}" dan QR codes berhasil dihapus'
         })
     
     except Exception as e:
@@ -807,16 +706,17 @@ def generate_business_card_qr(card_id):
         if quantity < 1 or quantity > 100:
             return jsonify({'error': 'Jumlah harus antara 1 dan 100'}), 400
         
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        # Check if business card exists using database manager
+        check_query = 'SELECT id, name FROM business_cards WHERE id = %s'
+        insert_query = 'INSERT INTO qr_codes (id, code_data, business_card_id) VALUES (%s, %s, %s)'
         
-        # Check if business card exists
-        cursor.execute('SELECT id, name FROM business_cards WHERE id = ?', (card_id,))
-        card = cursor.fetchone()
+        result = db_manager.execute_query(check_query, (card_id,), fetch='one')
         
-        if not card:
+        if not result:
             return jsonify({'error': 'Kartu nama tidak ditemukan'}), 404
+        
+        # Get card name for response
+        card_name = result[1] if isinstance(result, (list, tuple)) else result['name']
         
         # Generate QR codes
         codes = []
@@ -825,23 +725,18 @@ def generate_business_card_qr(card_id):
             scan_url = f"{base_url}/card/{card_id}?qr={code_id}"
             
             # Store in database with business card reference
-            cursor.execute(
-                'INSERT INTO qr_codes (id, code_data, business_card_id) VALUES (?, ?, ?)',
-                (code_id, scan_url, card_id)
-            )
+            db_manager.execute_query(insert_query, (code_id, scan_url, card_id))
+            
             codes.append({
                 'id': code_id,
                 'url': scan_url
             })
         
-        conn.commit()
-        conn.close()
-        
         return jsonify({
             'success': True,
             'codes': codes,
             'quantity': quantity,
-            'card_name': card[1]
+            'card_name': card_name
         })
     
     except Exception as e:
@@ -852,22 +747,25 @@ def generate_business_card_qr(card_id):
 def download_single_qr(code_id):
     """Download single QR code as PNG file"""
     try:
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        # Get QR code info using database manager
+        query = '''
+            SELECT qr.code_data, bc.name 
+            FROM qr_codes qr 
+            LEFT JOIN business_cards bc ON qr.business_card_id = bc.id 
+            WHERE qr.id = %s
+        '''
         
-        # Get QR code info
-        cursor.execute(
-            'SELECT qr.code_data, bc.name FROM qr_codes qr LEFT JOIN business_cards bc ON qr.business_card_id = bc.id WHERE qr.id = ?',
-            (code_id,)
-        )
-        result = cursor.fetchone()
+        result = db_manager.execute_query(query, (code_id,), fetch='one')
         
         if not result:
             return jsonify({'error': 'QR code tidak ditemukan'}), 404
         
+        # Get data from result
+        code_data = result[0] if isinstance(result, (list, tuple)) else result['code_data']
+        card_name = result[1] if isinstance(result, (list, tuple)) else result['name']
+        
         # Generate QR code image
-        qr_img = generate_qr_code(result[0])
+        qr_img = generate_qr_code(code_data)
         
         # Save to bytes
         img_bytes = io.BytesIO()
@@ -875,10 +773,8 @@ def download_single_qr(code_id):
         img_bytes.seek(0)
         
         # Create filename
-        card_name = result[1] or 'QR_Code'
-        filename = f"{card_name.replace(' ', '_')}_qr_{code_id[:8]}.png"
-        
-        conn.close()
+        safe_card_name = (card_name or 'QR_Code').replace(' ', '_')
+        filename = f"{safe_card_name}_qr_{code_id[:8]}.png"
         
         return send_file(
             img_bytes,
@@ -940,81 +836,84 @@ def business_card_landing(card_id):
     try:
         qr_id = request.args.get('qr')
         
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
         if qr_id:
             # Single optimized query to get both business card and QR code info
-            cursor.execute('''
+            query = '''
                 SELECT bc.name, bc.company_name, bc.phone, bc.scan_count,
                        qr.id, qr.is_expired
                 FROM business_cards bc
                 LEFT JOIN qr_codes qr ON bc.id = qr.business_card_id
-                WHERE bc.id = ? AND qr.id = ?
-            ''', (card_id, qr_id))
+                WHERE bc.id = %s AND qr.id = %s
+            '''
+            fallback_query = 'SELECT name FROM business_cards WHERE id = %s'
+            update_qr_query = '''
+                UPDATE qr_codes 
+                SET is_expired = true, scanned_at = CURRENT_TIMESTAMP 
+                WHERE id = %s
+            '''
+            update_card_query = '''
+                UPDATE business_cards 
+                SET scan_count = scan_count + 1 
+                WHERE id = %s
+            '''
             
-            result = cursor.fetchone()
+            result = db_manager.execute_query(query, (card_id, qr_id), fetch='one')
             
             if not result:
                 # Fallback: check if business card exists but QR doesn't belong to it
-                cursor.execute('SELECT name FROM business_cards WHERE id = ?', (card_id,))
-                if cursor.fetchone():
-                    conn.close()
+                fallback_result = db_manager.execute_query(fallback_query, (card_id,), fetch='one')
+                if fallback_result:
                     return render_template('scan_result.html', 
                                          status='error', 
                                          message='QR code tidak valid')
                 else:
-                    conn.close()
                     return render_template('scan_result.html', 
                                          status='error', 
                                          message='Kartu nama tidak ditemukan')
             
-            # Extract data
-            name, company_name, phone, scan_count = result[:4]
-            qr_exists, is_expired = result[4], result[5]
+            # Extract data (handle both dict and tuple formats)
+            if isinstance(result, (list, tuple)):
+                name, company_name, phone, scan_count = result[:4]
+                qr_exists, is_expired = result[4], result[5]
+            else:  # Dict-like
+                name = result['name']
+                company_name = result['company_name']
+                phone = result['phone']
+                scan_count = result['scan_count']
+                qr_exists = result['id']
+                is_expired = result['is_expired']
             
             if is_expired:  # Already used - fast path, no database updates needed
-                conn.close()
                 return render_template('scan_result.html', 
                                      status='expired', 
                                      message='QR code ini sudah pernah digunakan')
             
-            # First-time scan: Mark QR as used and increment scan count in single transaction
-            cursor.execute('''
-                UPDATE qr_codes 
-                SET is_expired = TRUE, scanned_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-            ''', (qr_id,))
-            
-            cursor.execute('''
-                UPDATE business_cards 
-                SET scan_count = scan_count + 1 
-                WHERE id = ?
-            ''', (card_id,))
-            
-            conn.commit()
+            # First-time scan: Mark QR as used and increment scan count
+            db_manager.execute_query(update_qr_query, (qr_id,))
+            db_manager.execute_query(update_card_query, (card_id,))
             
             # Use the incremented scan count
             updated_count = scan_count + 1
             
         else:
             # Direct access without QR code - single query
-            cursor.execute(
-                'SELECT name, company_name, phone, scan_count FROM business_cards WHERE id = ?',
-                (card_id,)
-            )
-            result = cursor.fetchone()
+            direct_query = 'SELECT name, company_name, phone, scan_count FROM business_cards WHERE id = %s'
+            
+            result = db_manager.execute_query(direct_query, (card_id,), fetch='one')
             
             if not result:
-                conn.close()
                 return render_template('scan_result.html', 
                                      status='error', 
                                      message='Kartu nama tidak ditemukan')
             
-            name, company_name, phone, updated_count = result
-        
-        conn.close()
+            # Extract data
+            if isinstance(result, (list, tuple)):
+                name, company_name, phone, updated_count = result
+            else:  # Dict-like
+                name = result['name']
+                company_name = result['company_name']
+                phone = result['phone']
+                updated_count = result['scan_count']
         
         card_data = {
             'name': name,
@@ -1035,32 +934,28 @@ def business_card_landing(card_id):
 def get_stats():
     """Get business card statistics"""
     try:
-        db_path = get_db_path()
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
         # Total business cards
-        cursor.execute('SELECT COUNT(*) FROM business_cards')
-        total_cards = cursor.fetchone()[0]
+        result = db_manager.execute_query('SELECT COUNT(*) FROM business_cards', fetch='one')
+        total_cards = result[0] if isinstance(result, (list, tuple)) else result['count']
         
         # Total QR codes generated
-        cursor.execute('SELECT COUNT(*) FROM qr_codes WHERE business_card_id IS NOT NULL')
-        total_qr_codes = cursor.fetchone()[0]
+        result = db_manager.execute_query('SELECT COUNT(*) FROM qr_codes WHERE business_card_id IS NOT NULL', fetch='one')
+        total_qr_codes = result[0] if isinstance(result, (list, tuple)) else result['count']
         
         # Total scans (used QR codes)
-        cursor.execute('SELECT COUNT(*) FROM qr_codes WHERE business_card_id IS NOT NULL AND is_expired = TRUE')
-        total_scans = cursor.fetchone()[0]
+        query = 'SELECT COUNT(*) FROM qr_codes WHERE business_card_id IS NOT NULL AND is_expired = true'
+        result = db_manager.execute_query(query, fetch='one')
+        total_scans = result[0] if isinstance(result, (list, tuple)) else result['count']
         
         # Unused QR codes
         unused_qr_codes = total_qr_codes - total_scans
-        
-        conn.close()
         
         return jsonify({
             'total_business_cards': total_cards,
             'total_qr_codes': total_qr_codes,
             'total_scans': total_scans,
-            'unused_qr_codes': unused_qr_codes
+            'unused_qr_codes': unused_qr_codes,
+            'database_type': db_manager.db_type
         })
     
     except Exception as e:

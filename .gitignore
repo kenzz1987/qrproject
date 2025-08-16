@@ -11,6 +11,7 @@ __pycache__/
 *.sqlite
 *.sqlite3
 qr_codes.db
+local_database_dump.sql
 
 # Distribution / packaging
 .Python
@@ -133,3 +134,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# QR Code Export Files
+qr_exports/

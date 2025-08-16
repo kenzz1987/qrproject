@@ -10,21 +10,22 @@ This guide covers deploying the QR Business Cards application to various free ho
 ## 🆓 Free Hosting Options
 
 ### 1. Railway (Recommended) ⭐
-**Why Railway?** Easy deployment, generous free tier, supports SQLite databases.
+**Why Railway?** Easy deployment, generous free tier, built-in PostgreSQL support.
 
 #### Steps:
 1. Go to [Railway.app](https://railway.app/)
 2. Sign up with GitHub
 3. Click "New Project" → "Deploy from GitHub repo"
 4. Select your repository
-5. Railway will automatically detect the `railway.toml` and `Procfile`
-6. Your app will be deployed with a free subdomain
+5. Add PostgreSQL database service to your project
+6. Railway will automatically set DATABASE_URL environment variable
+7. Your app will be deployed with a free subdomain
 
 **Features:**
 - ✅ Free tier: 512MB RAM, $5 credit/month
 - ✅ Custom domains supported
 - ✅ Automatic HTTPS
-- ✅ File persistence (SQLite works)
+- ✅ PostgreSQL database included
 
 ### 2. Render
 **Why Render?** Good free tier, easy to use, reliable.
@@ -85,43 +86,47 @@ This guide covers deploying the QR Business Cards application to various free ho
 | `render.yaml` | Render configuration | Render |
 | `vercel.json` | Vercel configuration | Vercel |
 
-## 🗄️ Database Considerations
+## 🗄️ Database Setup
 
-### SQLite (Current Setup)
-- ✅ **Works on:** Railway, Heroku, local development
-- ❌ **Issues on:** Vercel (ephemeral filesystem), Render (resets on restart)
+### PostgreSQL (Production Database)
+The application uses PostgreSQL for production deployments:
 
-### For Render/Vercel (Alternative Options)
-If you need persistent data on platforms that don't support file persistence:
+- ✅ **Railway**: Provides managed PostgreSQL automatically
+- ✅ **Render**: Free PostgreSQL database available
+- ✅ **Heroku**: Offers free PostgreSQL add-on
+- ⚠️ **Vercel**: Requires external PostgreSQL service
 
-1. **PostgreSQL (Free Options):**
-   - Supabase (1GB free)
-   - PlanetScale (5GB free)
-   - Railway PostgreSQL
+### Database Configuration
+The application automatically detects PostgreSQL via the `DATABASE_URL` environment variable:
 
-2. **Quick Migration to PostgreSQL:**
-```python
-# Add to requirements.txt
-psycopg2-binary>=2.9.0
+```bash
+# Railway/Heroku format (automatically provided)
+DATABASE_URL=postgresql://username:password@host:port/database
 
-# Update connection in main.py
-import os
-if 'DATABASE_URL' in os.environ:
-    # Use PostgreSQL for production
-    DATABASE_URL = os.environ['DATABASE_URL']
-else:
-    # Use SQLite for development
-    DATABASE_URL = 'sqlite:///qr_codes.db'
+# Manual configuration (if needed)
+PGHOST=localhost
+PGPORT=5432
+PGUSER=postgres
+PGPASSWORD=yourpassword
+PGDATABASE=qrproject
 ```
+
+### Free PostgreSQL Options
+For platforms that don't provide databases:
+- **Supabase**: 500MB free
+- **Aiven**: 1-month free trial
+- **ElephantSQL**: 20MB free
+- **Railway**: Free PostgreSQL with project
 
 ## 🚀 Recommended Deployment Strategy
 
-**For beginners:** Start with **Railway** - it's the easiest and supports SQLite out of the box.
+**For beginners:** Start with **Railway** - it's the easiest with built-in PostgreSQL support.
 
 **Steps:**
 1. Push your code to GitHub
 2. Connect Railway to your repository
-3. Your app will be live in minutes!
+3. Add PostgreSQL database service
+4. Your app will be live in minutes!
 
 ## 🌐 Environment Variables
 
@@ -129,7 +134,9 @@ Set these in your hosting platform:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
+| `DATABASE_URL` | (auto-provided) | PostgreSQL connection |
 | `FLASK_ENV` | `production` | Disables debug mode |
+| `SECRET_KEY` | (random string) | Session security |
 | `PORT` | `8080` (Railway) / `10000` (Render) | Server port |
 
 ## 📱 Testing Your Deployment

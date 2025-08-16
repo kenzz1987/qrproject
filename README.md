@@ -2,6 +2,8 @@
 
 A Flask-based web application for creating virtual business cards with one-time QR codes. Each business card can generate unique QR codes that expire after a single scan, perfect for networking and contact sharing.
 
+Uses PostgreSQL for reliable data storage and is optimized for production deployment.
+
 ## 🚀 Features
 
 ### Virtual Business Cards 💼
@@ -67,12 +69,12 @@ This application is ready for deployment on free hosting platforms. See [DEPLOYM
 
 | Platform | Difficulty | Database Support | Free Tier |
 |----------|------------|------------------|-----------|
-| **Railway** ⭐ | Easy | ✅ SQLite | $5 credit/month |
-| **Render** | Easy | ⚠️ Resets | 100GB bandwidth |
-| **Vercel** | Medium | ❌ Serverless only | Generous limits |
-| **Heroku** | Easy | ✅ SQLite | No longer free |
+| **Railway** ⭐ | Easy | ✅ PostgreSQL | $5 credit/month |
+| **Render** | Easy | ✅ PostgreSQL | 100GB bandwidth |
+| **Vercel** | Medium | ⚠️ External DB needed | Generous limits |
+| **Heroku** | Easy | ✅ PostgreSQL | No longer free |
 
-**Recommended:** Use Railway for the easiest deployment with full SQLite support.
+**Recommended:** Use Railway for the easiest deployment with PostgreSQL support.
 
 ### Environment Variables for Production:
 ```bash
@@ -141,37 +143,57 @@ PORT=8080
 
 ## 🗄️ Database Schema
 
+PostgreSQL tables with optimized indexes:
+
 ```sql
 -- Business cards table
 business_cards:
-- id (TEXT PRIMARY KEY) - Unique identifier
+- id (UUID PRIMARY KEY) - Unique identifier
 - name (TEXT) - Full name
-- company_name (TEXT) - Company name
+- company_name (TEXT NOT NULL) - Company name
 - phone (TEXT) - Phone number
 - created_at (TIMESTAMP) - When card was created
 - scan_count (INTEGER) - Total number of scans
 
 -- QR codes table
 qr_codes:
-- id (TEXT PRIMARY KEY) - Unique identifier
-- code_data (TEXT) - The URL stored in QR code
+- id (UUID PRIMARY KEY) - Unique identifier
+- code_data (TEXT UNIQUE NOT NULL) - The URL stored in QR code
 - created_at (TIMESTAMP) - When code was generated
 - scanned_at (TIMESTAMP) - When code was first scanned
 - is_expired (BOOLEAN) - Whether code has been used
-- metadata (TEXT) - Additional data (JSON)
-- business_card_id (TEXT) - Foreign key to business_cards (nullable)
+- metadata (JSONB) - Additional data (JSON)
+- business_card_id (UUID) - Foreign key to business_cards
+
+-- Optimized indexes for performance
+- Full-text search on company names
+- Efficient QR code lookups by expiration status
+- Fast business card associations
 ```
 
 ## 🔧 Configuration
 
-### Environment Variables
+### Required Environment Variables
+- `DATABASE_URL`: PostgreSQL connection string
 - `PORT`: Port number (default: 5000)
-- `DEBUG`: Enable debug mode (default: True in development)
+- `SECRET_KEY`: Flask secret key for sessions
+
+### PostgreSQL Setup
+The application requires PostgreSQL. Set the DATABASE_URL environment variable:
+```bash
+# For local development
+DATABASE_URL=postgresql://postgres:password@localhost:5432/qrproject_local
+
+# For production (Railway automatically provides this)
+DATABASE_URL=postgresql://user:pass@host:port/database
+```
 
 ## 📂 Project Structure
 ```
 qrproject/
 ├── main.py                 # Flask application
+├── database.py            # PostgreSQL database manager
+├── bulk_qr_generator.py   # Bulk QR code generation
 ├── templates/
 │   ├── index.html         # Main web interface
 │   └── scan_result.html   # Scan result page
@@ -179,7 +201,6 @@ qrproject/
 ├── Procfile              # Heroku deployment
 ├── runtime.txt           # Python version for Heroku
 ├── railway.toml          # Railway deployment config
-├── qr_codes.db           # SQLite database (created automatically)
 ├── .gitignore           # Git ignore file
 └── README.md            # This file
 ```
@@ -206,7 +227,16 @@ qrproject/
 
 ## 🔄 Future Enhancements
 
-- [ ] PostgreSQL support for production
+- [x] PostgreSQL support for production (✅ Completed)
+- [ ] Custom QR code styling (colors, logos)
+- [ ] Time-based expiration
+- [ ] Batch management and grouping
+- [ ] API authentication
+- [ ] Advanced analytics dashboard
+- [ ] Export data to CSV
+- [ ] Rate limiting
+- [ ] Multi-tenant support
+- [ ] QR code templates
 - [ ] Custom QR code styling (colors, logos)
 - [ ] Time-based expiration
 - [ ] Batch management and grouping
