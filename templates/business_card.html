@@ -84,9 +84,51 @@
             }
         }
 
-        /* Animation */
+        /* Loading spinner */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        .loading-text {
+            font-family: 'Arial', sans-serif;
+            font-size: 1.1rem;
+            color: #666;
+            font-weight: 500;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Main content animation */
         .image-container {
             animation: fadeIn 0.8s ease-out;
+            opacity: 0;
+        }
+
+        .image-container.loaded {
+            opacity: 1;
         }
 
         @keyframes fadeIn {
@@ -102,10 +144,46 @@
     </style>
 </head>
 <body>
-    <div class="image-container">
-        <img src="/static/BG.png" alt="Produk LPG Resmi" class="product-image" onerror="this.src='/static/BG2.png';">
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text">Memuat</div>
+    </div>
+
+    <!-- Main content -->
+    <div class="image-container" id="mainContent">
+        <img src="/static/BG.png" alt="Produk LPG Resmi" class="product-image" onerror="this.src='/static/BG2.png';" onload="hideLoading()">
         <div class="company-name-overlay">{{ card.company_name }}</div>
     </div>
+
+    <script>
+        // Hide loading overlay once everything is ready
+        function hideLoading() {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const mainContent = document.getElementById('mainContent');
+            
+            // Small delay to ensure smooth transition
+            setTimeout(() => {
+                loadingOverlay.style.opacity = '0';
+                loadingOverlay.style.transition = 'opacity 0.3s ease-out';
+                
+                setTimeout(() => {
+                    loadingOverlay.style.display = 'none';
+                    mainContent.classList.add('loaded');
+                }, 300);
+            }, 200);
+        }
+
+        // Fallback: hide loading if image fails or takes too long
+        setTimeout(() => {
+            hideLoading();
+        }, 3000);
+
+        // Also hide on page load if image is already cached
+        window.addEventListener('load', () => {
+            hideLoading();
+        });
+    </script>
 </body>
 </html>
 
